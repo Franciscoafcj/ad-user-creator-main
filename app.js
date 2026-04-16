@@ -20,20 +20,26 @@ function normalizeStr(str) {
 }
 
 /**
- * Extrai o primeiro nome e o último sobrenome de um nome completo,
- * ignorando partículas como de, da, do, dos, das, e, di, del, van, von, der, etc.
- * Exemplo: "Francisco de Assis Floriano Correa Junior" → { first: "Francisco", last: "Junior" }
+ * Extrai o primeiro nome, o útimo sobrenome (para login) e todos os sobrenomes (para o AD).
+ *
+ * Exemplo: "Francisco de Assis Floriano Correa Junior"
+ *   first    = "Francisco"
+ *   last     = "Junior"         ← usado para gerar Login/Email (primeiro.ultimo)
+ *   surnames = "de Assis Floriano Correa Junior"  ← usado como -Surname no AD
  */
 function parseFullName(fullName) {
   const particles = new Set(['de','da','do','dos','das','e','di','del','van','von','der','du','le','la','los','las']);
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return { first: '', last: '' };
-  if (parts.length === 1) return { first: parts[0], last: '' };
+  if (parts.length === 0) return { first: '', last: '', surnames: '' };
+  if (parts.length === 1) return { first: parts[0], last: '', surnames: '' };
 
   // Primeiro nome: primeira palavra (sempre)
   const first = parts[0];
 
-  // Último nome: última palavra que NÃO seja partícula (caminha do final para o início)
+  // Sobrenomes completos: tudo a partir do segundo token
+  const surnames = parts.slice(1).join(' ');
+
+  // Último sobrenome não-partícula: usado para compor login/email (primeiro.ultimo)
   let last = '';
   for (let i = parts.length - 1; i >= 1; i--) {
     if (!particles.has(parts[i].toLowerCase())) {
@@ -41,10 +47,9 @@ function parseFullName(fullName) {
       break;
     }
   }
-  // Se todos os demais forem partículas, usa a última palavra mesmo assim
   if (!last) last = parts[parts.length - 1];
 
-  return { first, last };
+  return { first, last, surnames };
 }
 
 /** Remove tudo que não seja dígito do CPF */
@@ -166,11 +171,15 @@ function generateScript(u) {
   const {
     firstName, lastName, fullName: fullNameRaw, email, sam, cpf11,
     ou, domain, password,
-    mustChange, enabled, templateUser
+    mustChange, enabled, templateUser,
+    surnames,
   } = u;
 
   // Nome completo digitado (ex: "Francisco de Assis Floriano Correa Junior")
   const displayName = fullNameRaw || `${firstName} ${lastName}`;
+
+  // $LastName = sobrenomes completos; fallback para lastName (última palavra) se não tiver
+  const lastNameField = surnames || lastName;
 
   const dcParts  = domain.split('.').map(p => `DC=${p}`).join(',');
   const ouLine   = ou
@@ -185,12 +194,13 @@ function generateScript(u) {
     ...(templateUser ? [`# Modelo  : ${templateUser}`] : []),
     `# ================================================================`,
     ``,
-    `# Importa o módulo do Active Directory`,
-    `Import-Module ActiveDirectory`,
+    `# Importa os módulos necessários`,
+    `Import-Module ActiveDirectory -ErrorAction Stop`,
+    `Import-Module Microsoft.PowerShell.Security -ErrorAction SilentlyContinue`,
     ``,
     `# ── Dados do Usuário ────────────────────────────────────────────`,
     `$FirstName    = "${firstName}"`,
-    `$LastName     = "${lastName}"`,
+    `$LastName     = "${lastNameField}"`,
     `$FullName     = "${displayName}"`,
     `$SamAccount   = "${sam}"`,
     `$UPN          = "${email}"`,
@@ -274,17 +284,20 @@ function generateBulkScript(users, domain, templateUser) {
     `# Total de usuários: ${users.length}`,
     `# ================================================================`,
     ``,
-    `Import-Module ActiveDirectory`,
+    `Import-Module ActiveDirectory -ErrorAction Stop`,
+    `Import-Module Microsoft.PowerShell.Security -ErrorAction SilentlyContinue`,
     ``,
     `$usuarios = @(`,
   ];
 
   const userLines = users.map((u, i) => {
     const comma = i < users.length - 1 ? ',' : '';
+    const lastNameField = u.surnames || u.lastName;
     return [
       `    @{`,
       `        FirstName   = "${u.firstName}"`,
-      `        LastName    = "${u.lastName}"`,
+      `        LastName    = "${lastNameField}"`,
+      `        FullName    = "${u.firstName} ${lastNameField}"`,
       `        Sam         = "${u.sam}"`,
       `        Email       = "${u.email}"`,
       `        CPF         = "${u.cpf11}"`,
@@ -320,7 +333,7 @@ function generateBulkScript(users, domain, templateUser) {
     `        $OUFINAL = if ($u.OU) { $u.OU } else { ${defaultOU} }`,
     ``,
     `        New-ADUser \``,
-    `            -Name              "$($u.FirstName) $($u.LastName)" \``,
+    `            -Name              "$($u.FullName)" \``,
     `            -GivenName         $u.FirstName \``,
     `            -Surname           $u.LastName \``,
     `            -SamAccountName    $u.Sam \``,
@@ -332,10 +345,10 @@ function generateBulkScript(users, domain, templateUser) {
     `            -Enabled           $true \``,
     `            -ChangePasswordAtLogon $true`,
     ``,
-    `        Write-Host "✅ $($u.FirstName) $($u.LastName) criado." -ForegroundColor Green`,
+    `        Write-Host "✅ $($u.FullName) criado." -ForegroundColor Green`,
     ...templateBlock,
     `    } catch {`,
-    `        Write-Error "❌ Falha em $($u.FirstName) $($u.LastName): $_"`,
+    `        Write-Error "❌ Falha em $($u.FullName): $_"`,
     `    }`,
     `}`,
   ];
@@ -393,6 +406,84 @@ const emailPreview   = document.getElementById('emailPreview');
 const samPreview     = document.getElementById('samPreview');
 const domainInput    = document.getElementById('domain');
 
+/**
+ * Formata o nome completo: cada palavra começa com maiúscula, exceto as
+ * partículas portuguesas (de, da, do, dos, das, e, di, del, van, von, der, …)
+ * que ficam em minúscula.
+ * A primeira palavra sempre começa com maiúscula independente de ser partícula.
+ */
+function formatName(value) {
+  const particles = new Set([
+    'de','da','do','dos','das','e','di','del',
+    'van','von','der','du','le','la','los','las',
+  ]);
+
+  return value
+    .split(' ')
+    .map((word, index) => {
+      if (!word) return word; // preserva espaços múltiplos enquanto digita
+      const lower = word.toLowerCase();
+      // Primeira palavra sempre capitalizada; partículas ficam minúsculas
+      if (index > 0 && particles.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(' ');
+}
+
+/** Verifica se um SAM já existe na lista de usuários do AD */
+function samExists(sam) {
+  if (!window.AD_DATA || !window.AD_DATA.users) return false;
+  const s = sam.toLowerCase();
+  return window.AD_DATA.users.some(u =>
+    (u.samAccountName || '').toLowerCase() === s
+  );
+}
+
+/**
+ * Gera SAMs alternativos quando o primário está em uso.
+ * Estratégias (nesta ordem):
+ *  1. primeiro.OUTRO_SOBRENOME  — outros sobrenomes não-partícula, do penúltimo para o início
+ *  2. primeiro.inicial.ultimo   — iniciaação do sobrenome intermediário
+ *  3. primeiro.ultimo2, 3, 4    — sufixo numérico como último recurso
+ */
+function suggestAlternativeSams(fullName) {
+  const particles = new Set([
+    'de','da','do','dos','das','e','di','del',
+    'van','von','der','du','le','la','los','las',
+  ]);
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return [];
+
+  const fn = normalizeStr(parts[0]);
+  if (!fn) return [];
+
+  // Todos os tokens não-partícula exceto o primeiro nome
+  const surnames = parts.slice(1).filter(w => !particles.has(w.toLowerCase()));
+
+  const candidates = [];
+
+  // 1. Cada sobrenome não-partícula como alternativa (exceto o último já usado)
+  for (let i = surnames.length - 2; i >= 0; i--) {
+    const alt = normalizeStr(surnames[i]);
+    if (alt) candidates.push(`${fn}.${alt}`);
+  }
+
+  // 2. primeiro.inicial_do_meio.ultimo  (ex: paulo.d.santos)
+  const lastSurname = normalizeStr(surnames[surnames.length - 1] || '');
+  for (let i = 0; i < surnames.length - 1; i++) {
+    const mid = normalizeStr(surnames[i]);
+    if (mid && lastSurname) candidates.push(`${fn}.${mid.charAt(0)}.${lastSurname}`);
+  }
+
+  // 3. Sufixo numérico
+  if (lastSurname) {
+    for (let n = 2; n <= 5; n++) candidates.push(`${fn}.${lastSurname}${n}`);
+  }
+
+  // Remove duplicatas
+  return [...new Set(candidates)].filter(Boolean);
+}
+
 function updateEmailAndSam() {
   const fullName = fullNameInput.value.trim();
   const domain   = domainInput.value.trim() || 'orsegups.com.br';
@@ -414,10 +505,77 @@ function updateEmailAndSam() {
     emailPreview.value = '';
     samPreview.value   = '';
   }
+
+  // Verifica conflito no AD
+  checkSamConflict(fullName, domain);
 }
 
-fullNameInput.addEventListener('input', updateEmailAndSam);
-domainInput.addEventListener('input',  updateEmailAndSam);
+/** Exibe painel de conflito de SAM com sugestões de alternativas */
+function checkSamConflict(fullName, domain) {
+  const conflictEl  = document.getElementById('samConflict');
+  const conflictMsg = document.getElementById('samConflictMsg');
+  const altsEl      = document.getElementById('samAlternatives');
+  if (!conflictEl) return;
+
+  const currentSam = samPreview.value;
+  if (!currentSam || !samExists(currentSam)) {
+    conflictEl.style.display = 'none';
+    samPreview.classList.remove('is-invalid');
+    return;
+  }
+
+  // Conflito detectado
+  samPreview.classList.add('is-invalid');
+  conflictEl.style.display = 'block';
+
+  // Gera alternativas que ainda não estão em uso
+  const alts = suggestAlternativeSams(fullName).filter(a => !samExists(a));
+
+  altsEl.innerHTML = '';
+
+  if (!alts.length) {
+    conflictMsg.textContent = 'Login já existe no AD — informe um nome diferente.';
+    return;
+  }
+
+  conflictMsg.textContent = 'Login já existe no AD — clique em uma alternativa:';
+
+  alts.slice(0, 6).forEach(alt => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sam-alt-btn';
+    btn.textContent = alt;
+    btn.title = `Usar: ${alt}@${domain}`;
+    btn.addEventListener('click', () => {
+      samPreview.value   = alt;
+      emailPreview.value = `${alt}@${domain}`;
+      samPreview.classList.remove('is-invalid');
+      samPreview.classList.add('is-valid');
+      conflictEl.style.display = 'none';
+    });
+    altsEl.appendChild(btn);
+  });
+}
+
+fullNameInput.addEventListener('input', function () {
+  // Guarda posição do cursor antes de reformatar
+  const start = this.selectionStart;
+  const end   = this.selectionEnd;
+  const prev  = this.value;
+
+  const formatted = formatName(this.value);
+
+  if (formatted !== prev) {
+    this.value = formatted;
+    // Restaura posição do cursor (pode variar ±0 pois só muda case)
+    this.setSelectionRange(start, end);
+  }
+
+  updateEmailAndSam();
+});
+
+domainInput.addEventListener('input', updateEmailAndSam);
+
 
 /* ---------- Password strength ---------- */
 
@@ -502,7 +660,7 @@ userForm.addEventListener('submit', function (e) {
 
   if (!valid) return;
 
-  const { first, last } = parseFullName(fullName);
+  const { first, last, surnames } = parseFullName(fullName);
   const fn    = normalizeStr(first);
   const ln    = normalizeStr(last);
   const sam   = ln ? `${fn}.${ln}` : fn;
@@ -511,6 +669,7 @@ userForm.addEventListener('submit', function (e) {
   const userData = {
     firstName  : first,
     lastName   : last,
+    surnames,
     fullName,
     email, sam, cpf11,
     ou           : document.getElementById('ou').value.trim(),
@@ -620,7 +779,7 @@ document.getElementById('bulkBtn').addEventListener('click', function () {
                        resolveOuFromInput(globalOU)     ||
                        '';
 
-    return { firstName: first, lastName: last, sam, email, cpf11, ou: ouResolved, password };
+    return { firstName: first, lastName: last, surnames, sam, email, cpf11, ou: ouResolved, password };
   }).filter(u => u.firstName && u.lastName);
 
   if (!users.length) { showToast('Nenhum usuário válido encontrado.', '#ef4444'); return; }

@@ -132,7 +132,20 @@
                 </svg>
               </button>
             </div>
+
+            <!-- Aviso de conflito + alternativas -->
+            <div class="sam-conflict" id="samConflict" style="display:none">
+              <div class="sam-conflict-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span id="samConflictMsg">Login já existe no AD — escolha uma alternativa:</span>
+              </div>
+              <div class="sam-alternatives" id="samAlternatives"></div>
+            </div>
           </div>
+
 
           <!-- CPF -->
           <div class="form-group">

@@ -1269,3 +1269,47 @@ textarea {
   font-size: 11px; background: #ffffff08; border-radius: 4px;
   border: none; color: var(--warning);
 }
+
+/* ===========================
+   SAM CONFLICT PANEL
+=========================== */
+.sam-conflict {
+  margin-top: 8px;
+  padding: 10px 14px;
+  background: #ef444410;
+  border: 1px solid #ef444430;
+  border-radius: var(--radius-sm);
+  animation: fadeIn .2s ease;
+}
+
+.sam-conflict-header {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 500; color: var(--danger);
+  margin-bottom: 8px;
+}
+.sam-conflict-header svg { flex-shrink: 0; stroke: var(--danger); }
+
+.sam-alternatives {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+
+.sam-alt-btn {
+  background: #ffffff0a;
+  border: 1px solid #ef444440;
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+  font-size: 12px; font-weight: 500;
+  padding: 5px 12px; cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.sam-alt-btn:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px var(--primary-glow);
+}
+.sam-alt-btn:active { transform: translateY(0); }
+

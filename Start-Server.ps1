@@ -188,7 +188,7 @@ try {
                 # ── Configurar processo filho ──────────────────────────
                 $psi = [System.Diagnostics.ProcessStartInfo]::new()
                 $psi.FileName               = 'powershell.exe'
-                $psi.Arguments              = "-NoProfile -ExecutionPolicy Bypass -NonInteractive -File `"$tmpFile`""
+                $psi.Arguments              = "-NoLogo -NonInteractive -ExecutionPolicy Bypass -File `"$tmpFile`""
                 $psi.RedirectStandardOutput = $true
                 $psi.RedirectStandardError  = $true
                 $psi.UseShellExecute        = $false
