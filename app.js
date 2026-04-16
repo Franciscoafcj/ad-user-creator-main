@@ -663,8 +663,11 @@ userForm.addEventListener('submit', function (e) {
   const { first, last, surnames } = parseFullName(fullName);
   const fn    = normalizeStr(first);
   const ln    = normalizeStr(last);
-  const sam   = ln ? `${fn}.${ln}` : fn;
-  const email = `${sam}@${domain}`;
+
+  // Usa o SAM/email que está nos campos de preview — pode ser uma alternativa
+  // escolhida pelo usuário. Só recalcula se estiver vazio.
+  const sam   = samPreview.value.trim()   || (ln ? `${fn}.${ln}` : fn);
+  const email = emailPreview.value.trim() || `${sam}@${domain}`;
 
   const userData = {
     firstName  : first,
@@ -679,6 +682,7 @@ userForm.addEventListener('submit', function (e) {
     enabled      : document.getElementById('enabled').checked,
     templateUser : document.getElementById('templateUser').value.trim(),
   };
+
 
   const script = generateScript(userData);
   scriptCode.innerHTML = highlight(script);
