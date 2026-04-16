@@ -1085,3 +1085,188 @@ textarea {
 .tl-warn    { color: #fbbf24; }
 .tl-info    { color: #60a5fa; }
 .tl-comment { color: #4b5563; font-style: italic; }
+
+/* ===========================
+   TREE DN BADGE
+   Indica se o DN é exato (do AD) ou calculado
+=========================== */
+.tree-dn-badge {
+  font-size: 9px; font-weight: 700;
+  padding: 1px 5px; border-radius: 99px;
+  margin-left: 4px; flex-shrink: 0;
+  line-height: 1.4; letter-spacing: .3px;
+  pointer-events: none;
+  cursor: help;
+}
+.tree-dn-exact {
+  background: #10b98118;
+  color: #10b981;
+  border: 1px solid #10b98130;
+}
+.tree-dn-calc {
+  background: #ffffff08;
+  color: var(--text-muted);
+  border: 1px solid #ffffff12;
+}
+
+/* ===========================
+   BULK OU SELECTOR (Lote)
+=========================== */
+.bulk-ou-selector {
+  margin: 0 26px 6px;
+  padding: 14px 16px;
+  background: #6366f10a;
+  border: 1px solid #6366f122;
+  border-radius: var(--radius-sm);
+  display: flex; flex-direction: column; gap: 8px;
+  animation: fadeIn .2s ease;
+}
+
+.bulk-ou-label {
+  display: flex; align-items: center; gap: 8px;
+ /* ── Combobox de pesquisa de OU ── */
+.bulk-ou-search-wrap {
+  position: relative;
+  display: flex; flex-direction: column; gap: 8px;
+}
+
+.bulk-ou-input-wrap {
+  position: relative; display: flex; align-items: center;
+}
+
+.bulk-ou-search-icon {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  width: 14px; height: 14px; color: var(--text-muted); pointer-events: none;
+  flex-shrink: 0;
+}
+
+.bulk-ou-input-wrap input {
+  padding-left: 36px !important;
+  padding-right: 36px !important;
+  font-size: 13px;
+}
+
+.bulk-ou-clear {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); padding: 4px; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  transition: color var(--transition), background var(--transition);
+}
+.bulk-ou-clear:hover { color: var(--danger); background: #ef444415; }
+.bulk-ou-clear svg   { width: 13px; height: 13px; display: block; }
+
+/* Dropdown */
+.bulk-ou-dropdown {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 300;
+  background: #13162299;
+  backdrop-filter: blur(20px);
+  border: 1px solid #ffffff18;
+  border-radius: 10px;
+  box-shadow: 0 16px 48px #00000077;
+  max-height: 280px; overflow-y: auto;
+  animation: dropIn .15s cubic-bezier(.4,0,.2,1);
+}
+.bulk-ou-dropdown::-webkit-scrollbar { width: 4px; }
+.bulk-ou-dropdown::-webkit-scrollbar-thumb { background: #ffffff18; border-radius: 99px; }
+
+.bulk-ou-drop-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 14px; cursor: pointer;
+  border-bottom: 1px solid #ffffff08;
+  transition: background var(--transition);
+}
+.bulk-ou-drop-item:last-child { border-bottom: none; }
+.bulk-ou-drop-item:hover,
+.bulk-ou-drop-item.focused { background: #6366f118; }
+
+.bulk-ou-drop-icon {
+  font-size: 16px; flex-shrink: 0; padding-top: 1px;
+}
+
+.bulk-ou-drop-info { flex: 1; min-width: 0; }
+
+.bulk-ou-drop-path {
+  font-size: 13px; font-weight: 500; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bulk-ou-drop-path mark {
+  background: #f59e0b33; color: var(--warning);
+  border-radius: 2px; padding: 0 2px;
+}
+
+.bulk-ou-drop-dn {
+  font-size: 10px; color: var(--text-muted);
+  font-family: monospace; word-break: break-all;
+  margin-top: 2px; line-height: 1.4;
+}
+.bulk-ou-drop-dn mark {
+  background: #22d3ee22; color: var(--accent);
+  border-radius: 2px; padding: 0 2px;
+}
+
+.bulk-ou-empty {
+  display: flex; align-items: center; gap: 8px;
+  padding: 16px; font-size: 12px; color: var(--text-muted);
+}
+.bulk-ou-empty svg { width: 16px; height: 16px; flex-shrink: 0; }
+.bulk-ou-empty strong { color: var(--text-dim); }
+
+.bulk-ou-drop-more {
+  padding: 8px 14px;
+  font-size: 11px; color: var(--text-muted);
+  text-align: center;
+  border-top: 1px solid #ffffff08;
+  font-style: italic;
+}
+
+/* Chip da OU selecionada */
+.bulk-ou-chip {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #6366f115, #a78bfa0d);
+  border: 1px solid #6366f133;
+  border-radius: var(--radius-sm);
+  animation: fadeIn .2s ease;
+}
+
+.bulk-ou-chip-icon { font-size: 20px; flex-shrink: 0; }
+
+.bulk-ou-chip-info { flex: 1; min-width: 0; }
+
+.bulk-ou-chip-name {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.bulk-ou-chip-dn {
+  font-size: 10px; color: var(--accent2);
+  font-family: monospace; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.bulk-ou-chip-remove {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); padding: 5px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  transition: color var(--transition), background var(--transition);
+  flex-shrink: 0;
+}
+.bulk-ou-chip-remove:hover { color: var(--danger); background: #ef444415; }
+.bulk-ou-chip-remove svg { width: 14px; height: 14px; display: block; }
+
+/* CSV hint extra tip */
+.csv-hint-tip {
+  display: block; margin-top: 4px;
+  color: var(--text-muted); font-size: 11px;
+}
+.csv-hint-tip em { color: var(--accent2); font-style: normal; font-weight: 600; }
+.csv-hint-tip code {
+  display: inline; margin: 0; padding: 1px 5px;
+  font-size: 11px; background: #ffffff08; border-radius: 4px;
+  border: none; color: var(--warning);
+}
+ border-radius: 4px;
+  border: none; color: var(--warning);
+}
+

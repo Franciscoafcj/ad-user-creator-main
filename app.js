@@ -565,6 +565,29 @@ function parseCsvLine(line) {
   return line.split(',').map(s => s.trim());
 }
 
+/**
+ * Resolve um texto de OU (nome, DN parcial ou DN completo) para o DN exato do AD.
+ * Se o AD_DATA não estiver disponível, retorna o texto como está (se parecer um DN)
+ * ou null.
+ */
+function resolveOuFromInput(text) {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  // Se tivermos dados do AD, tenta resolver pelo mapa
+  if (window.AD_DATA && window.AD_DATA.ous && window.AD_DATA.ous.length) {
+    const resolved = resolveOuByName(trimmed);
+    if (resolved) return resolved;
+  }
+
+  // Sem AD_DATA: se parece um DN (contém '='), usa diretamente
+  if (trimmed.includes('=')) return trimmed;
+
+  // Senão, não sabe o DN
+  return null;
+}
+
 document.getElementById('bulkBtn').addEventListener('click', function () {
   const raw   = document.getElementById('csvInput').value.trim();
   if (!raw) { showToast('Cole o CSV antes de gerar.', '#f59e0b'); return; }
@@ -579,18 +602,34 @@ document.getElementById('bulkBtn').addEventListener('click', function () {
 
   if (!dataLines.length) { showToast('Nenhum dado encontrado no CSV.', '#f59e0b'); return; }
 
+  // OU Global: seletor de regional/setor ou OU padrão
+  const bulkOuSelect = document.getElementById('bulkOuSelect');
+  const globalOU = bulkOuSelect ? bulkOuSelect.value : '';
+
   const users = dataLines.map(line => {
-    const [fullNameCsv = '', cpfRaw = '', ou = '', password = 'Mudar@2025'] = parseCsvLine(line);
+    const [fullNameCsv = '', cpfRaw = '', ouRaw = '', password = 'Mudar@2025'] = parseCsvLine(line);
     const { first, last } = parseFullName(fullNameCsv.trim());
     const fn    = normalizeStr(first);
     const ln    = normalizeStr(last);
     const cpf11 = normalizeCPF(cpfRaw) || '00000000000';
     const sam   = ln ? `${fn}.${ln}` : fn;
     const email = `${sam}@${domain}`;
-    return { firstName: first, lastName: last, sam, email, cpf11, ou, password };
+
+    // Resolução de OU: prioridade CSV → seletor global → vazio (padrão do domínio)
+    const ouResolved = resolveOuFromInput(ouRaw.trim()) ||
+                       resolveOuFromInput(globalOU)     ||
+                       '';
+
+    return { firstName: first, lastName: last, sam, email, cpf11, ou: ouResolved, password };
   }).filter(u => u.firstName && u.lastName);
 
   if (!users.length) { showToast('Nenhum usuário válido encontrado.', '#ef4444'); return; }
+
+  // Mostra quais OUs foram resolvidas / não resolvidas
+  const unresolved = users.filter(u => !u.ou);
+  if (unresolved.length) {
+    showToast(`⚠ ${unresolved.length} usuário(s) sem OU — será usada a padrão do domínio.`, '#f59e0b');
+  }
 
   const templateUserBulk = document.getElementById('templateUser').value.trim();
   const script = generateBulkScript(users, domain, templateUserBulk);
@@ -763,7 +802,8 @@ function renderTree(filter) {
 
 function renderNode(node, parentTrail, container, filter, domain) {
   const trail = [...parentTrail, node.name];
-  const dn    = buildDN(trail, domain);
+  // Prioridade: DN exato do AD → DN calculado como fallback
+  const dn    = node.exactDn || buildDN(trail, domain);
   const hasChildren = !!(node.children && node.children.length);
 
   const matchesSelf  = !filter || node.name.toLowerCase().includes(filter.toLowerCase());
@@ -772,7 +812,8 @@ function renderNode(node, parentTrail, container, filter, domain) {
 
   const { wrapper } = createNodeRow({
     id: node.id, name: node.name, icon: node.icon || '📁',
-    trail, dn, isRoot: false, hasChildren, filter
+    trail, dn, isRoot: false, hasChildren, filter,
+    hasExactDn: !!node.exactDn,
   });
   container.appendChild(wrapper);
 
@@ -794,7 +835,7 @@ function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function createNodeRow({ id, name, icon, trail, dn, isRoot, hasChildren, filter }) {
+function createNodeRow({ id, name, icon, trail, dn, isRoot, hasChildren, filter, hasExactDn }) {
   const wrapper = document.createElement('div');
   wrapper.className = 'tree-node';
 
@@ -820,9 +861,23 @@ function createNodeRow({ id, name, icon, trail, dn, isRoot, hasChildren, filter 
     ? name.replace(new RegExp(`(${escapeRegex(filter)})`, 'gi'), '<mark>$1</mark>')
     : name;
 
-  row.appendChild(toggle);
-  row.appendChild(iconEl);
-  row.appendChild(label);
+  // Indicador visual: ✓ verde = DN exato do AD | ◌ cinza = DN calculado
+  if (!isRoot) {
+    const dnBadge = document.createElement('span');
+    dnBadge.className = hasExactDn ? 'tree-dn-badge tree-dn-exact' : 'tree-dn-badge tree-dn-calc';
+    dnBadge.title = hasExactDn
+      ? `DN real do AD:\n${dn}`
+      : `DN calculado (OU não está na lista do AD):\n${dn}`;
+    dnBadge.textContent = hasExactDn ? '✓' : '◌';
+    row.appendChild(toggle);
+    row.appendChild(iconEl);
+    row.appendChild(label);
+    row.appendChild(dnBadge);
+  } else {
+    row.appendChild(toggle);
+    row.appendChild(iconEl);
+    row.appendChild(label);
+  }
   wrapper.appendChild(row);
 
   if (hasChildren) {
@@ -1000,9 +1055,66 @@ domainInput.addEventListener('input', () => {
  * Exemplo de DN: "OU=TI,OU=Usuarios,DC=orsegups,DC=com,DC=br"
  * → caminho: Usuarios > TI
  */
+/**
+ * Mapa global: DN exato (lowercase) → objeto OU do AD.
+ * Populado por buildOUTreeFromAD e usado por resolveOuByName.
+ */
+const AD_DN_MAP   = {};  // chave = dn.toLowerCase()  → ouObj
+const AD_NAME_MAP = {};  // chave = name.toLowerCase() → [ouObj, ...] (pode haver nomes repetidos)
+
+/**
+ * Dado um nome de OU (ex: "TI", "São Paulo") ou um DN parcial/completo,
+ * tenta resolver para o distinguishedName exato registrado no AD.
+ * Retorna o DN exato se encontrado, ou null.
+ */
+function resolveOuByName(nameOrDn) {
+  if (!nameOrDn) return null;
+  const trimmed = nameOrDn.trim();
+
+  // 1. Já é um DN completo (contém '=')
+  if (trimmed.includes('=')) {
+    const key = trimmed.toLowerCase();
+    if (AD_DN_MAP[key]) return AD_DN_MAP[key].distinguishedName;
+    // Mesmo que não esteja no mapa, retorna como está (confiamos no usuário)
+    return trimmed;
+  }
+
+  // 2. Busca por nome exato (case-insensitive) — se houver um único resultado
+  const key = trimmed.toLowerCase();
+  const matches = AD_NAME_MAP[key];
+  if (matches && matches.length === 1) return matches[0].distinguishedName;
+  if (matches && matches.length > 1) {
+    // Retorna o primeiro (menor DN = mais alto na hierarquia)
+    return matches.sort((a, b) =>
+      a.distinguishedName.length - b.distinguishedName.length
+    )[0].distinguishedName;
+  }
+
+  // 3. Busca parcial por nome (contém)
+  const partial = Object.values(AD_NAME_MAP)
+    .flat()
+    .filter(o => o.name.toLowerCase().includes(key));
+  if (partial.length === 1) return partial[0].distinguishedName;
+  if (partial.length > 1) {
+    return partial.sort((a, b) =>
+      a.distinguishedName.length - b.distinguishedName.length
+    )[0].distinguishedName;
+  }
+
+  return null; // não encontrado
+}
+
 function buildOUTreeFromAD(ous) {
   const root    = [];
   const nodeMap = {};  // chave = caminho completo "Pai>Filho>Neto"
+
+  // Popula os mapas globais de lookup
+  for (const ou of ous) {
+    AD_DN_MAP[ou.distinguishedName.toLowerCase()] = ou;
+    const nameKey = ou.name.toLowerCase();
+    if (!AD_NAME_MAP[nameKey]) AD_NAME_MAP[nameKey] = [];
+    AD_NAME_MAP[nameKey].push(ou);
+  }
 
   // Ordena por comprimento de DN (menor = mais alto na hierarquia)
   const sorted = [...ous].sort((a, b) =>
@@ -1026,6 +1138,7 @@ function buildOUTreeFromAD(ous) {
 
     for (let i = 0; i < path.length; i++) {
       keyAccum = keyAccum ? `${keyAccum}>${path[i]}` : path[i];
+      const isLeaf = i === path.length - 1;
 
       if (!nodeMap[keyAccum]) {
         const icon = guessOuIcon(path[i]);
@@ -1034,9 +1147,15 @@ function buildOUTreeFromAD(ous) {
           name    : path[i],
           icon,
           children: [],
+          // exactDn: DN real do AD, disponível apenas na folha correspondente
+          exactDn : isLeaf ? ou.distinguishedName : null,
         };
         nodeMap[keyAccum] = newNode;
         currentLevel.push(newNode);
+      } else if (isLeaf && !nodeMap[keyAccum].exactDn) {
+        // Se o nó pai já foi criado sem DN (porque era só um caminho intermediário),
+        // e agora chegou a OU exata, guardamos o DN real
+        nodeMap[keyAccum].exactDn = ou.distinguishedName;
       }
       currentLevel = nodeMap[keyAccum].children;
     }
@@ -1116,8 +1235,179 @@ function initWithADData() {
       expandedIds = new Set(['__root__']);
       ouTree.slice(0, 3).forEach(n => expandedIds.add(n.id));
     }
+
+    // ── Seletor de OU com pesquisa para o Lote ───────────────────────────
+    (function () {
+      const searchEl   = document.getElementById('bulkOuSearch');
+      const clearEl    = document.getElementById('bulkOuClear');
+      const dropEl     = document.getElementById('bulkOuDropdown');
+      const chipEl     = document.getElementById('bulkOuChip');
+      const chipName   = document.getElementById('bulkOuChipName');
+      const chipDnEl   = document.getElementById('bulkOuChipDn');
+      const chipRem    = document.getElementById('bulkOuChipRemove');
+      const hiddenEl   = document.getElementById('bulkOuSelect'); // input[type=hidden]
+
+      if (!searchEl) return; // sem AD_DATA ainda
+
+      /** Lista canônica de OUs ordenada por profundidade depois alfabética */
+      const sorted = [...ous].sort((a, b) => {
+        const da = a.distinguishedName.split(',').filter(p => p.toUpperCase().startsWith('OU=')).length;
+        const db = b.distinguishedName.split(',').filter(p => p.toUpperCase().startsWith('OU=')).length;
+        return da !== db ? da - db : a.name.localeCompare(b.name, 'pt-BR');
+      });
+
+      /** Retorna caminho pai→filho ex: ["Usuarios", "TI"] */
+      function ouPath(ou) {
+        return ou.distinguishedName
+          .split(',')
+          .filter(p => p.trim().toUpperCase().startsWith('OU='))
+          .map(p => p.trim().slice(3))
+          .reverse();
+      }
+
+      /** Filtra a lista por termo */
+      function filter(term) {
+        if (!term) return sorted;
+        const t = term.toLowerCase();
+        return sorted.filter(ou =>
+          ou.name.toLowerCase().includes(t) ||
+          ou.distinguishedName.toLowerCase().includes(t) ||
+          ouPath(ou).join(' ').toLowerCase().includes(t)
+        );
+      }
+
+      /** Destaca texto */
+      function hl(text, term) {
+        if (!term) return text;
+        const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return text.replace(new RegExp(`(${esc})`, 'gi'), '<mark>$1</mark>');
+      }
+
+      /** Renderiza dropdown */
+      function renderDrop(results, term) {
+        dropEl.innerHTML = '';
+
+        if (!results.length) {
+          dropEl.innerHTML = `<div class="bulk-ou-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            Nenhuma OU encontrada para "<strong>${term}</strong>"
+          </div>`;
+          dropEl.style.display = 'block';
+          return;
+        }
+
+        // Limita a 60 resultados para performance
+        const slice = results.slice(0, 60);
+        slice.forEach((ou, idx) => {
+          const path  = ouPath(ou);
+          const icon  = guessOuIcon(ou.name);
+          const label = path.join(' › ');
+
+          const item = document.createElement('div');
+          item.className = 'bulk-ou-drop-item';
+          item.dataset.idx = idx;
+          item.innerHTML = `
+            <span class="bulk-ou-drop-icon">${icon}</span>
+            <div class="bulk-ou-drop-info">
+              <div class="bulk-ou-drop-path">${hl(label, term)}</div>
+              <div class="bulk-ou-drop-dn">${hl(ou.distinguishedName, term)}</div>
+            </div>`;
+          item.addEventListener('mousedown', e => {
+            e.preventDefault();
+            select(ou);
+          });
+          dropEl.appendChild(item);
+        });
+
+        if (results.length > 60) {
+          const more = document.createElement('div');
+          more.className = 'bulk-ou-drop-more';
+          more.textContent = `+ ${results.length - 60} resultados — refine a busca`;
+          dropEl.appendChild(more);
+        }
+
+        dropEl.style.display = 'block';
+      }
+
+      /** Seleciona uma OU */
+      function select(ou) {
+        hiddenEl.value = ou.distinguishedName;
+        chipName.textContent = ouPath(ou).join(' › ');
+        chipDnEl.textContent = ou.distinguishedName;
+        chipEl.querySelector('.bulk-ou-chip-icon').textContent = guessOuIcon(ou.name);
+        chipEl.style.display = 'flex';
+        searchEl.value = '';
+        clearEl.style.display = 'none';
+        dropEl.style.display  = 'none';
+      }
+
+      /** Limpa seleção */
+      function clear() {
+        hiddenEl.value = '';
+        chipEl.style.display   = 'none';
+        searchEl.value         = '';
+        clearEl.style.display  = 'none';
+        dropEl.style.display   = 'none';
+      }
+
+      /* ── Eventos ── */
+      let debounce;
+      searchEl.addEventListener('input', function () {
+        clearEl.style.display = this.value ? 'flex' : 'none';
+        clearTimeout(debounce);
+        debounce = setTimeout(() => {
+          const term = this.value.trim();
+          if (!term) { dropEl.style.display = 'none'; return; }
+          renderDrop(filter(term), term);
+        }, 160);
+      });
+
+      searchEl.addEventListener('focus', function () {
+        const term = this.value.trim();
+        if (term.length >= 1) renderDrop(filter(term), term);
+        else if (!hiddenEl.value) renderDrop(sorted.slice(0, 30), ''); // mostra top-30 ao abrir
+      });
+
+      searchEl.addEventListener('blur', () => {
+        setTimeout(() => { dropEl.style.display = 'none'; }, 160);
+      });
+
+      searchEl.addEventListener('keydown', function (e) {
+        const items = dropEl.querySelectorAll('.bulk-ou-drop-item');
+        const active = dropEl.querySelector('.bulk-ou-drop-item.focused');
+        if (e.key === 'Escape') { dropEl.style.display = 'none'; return; }
+        if (!items.length) return;
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          const next = active ? active.nextElementSibling : items[0];
+          active?.classList.remove('focused');
+          if (next?.classList.contains('bulk-ou-drop-item')) next.classList.add('focused');
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          const prev = active?.previousElementSibling;
+          active?.classList.remove('focused');
+          if (prev?.classList.contains('bulk-ou-drop-item')) prev.classList.add('focused');
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (active) {
+            const idx = +active.dataset.idx;
+            const term = searchEl.value.trim();
+            const results = filter(term);
+            if (results[idx]) select(results[idx]);
+          }
+        }
+      });
+
+      clearEl.addEventListener('click',    clear);
+      chipRem.addEventListener('click',    clear);
+
+    })();
   }
 }
+
+
 
 // Inicializa ao carregar
 initWithADData();

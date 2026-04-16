@@ -335,13 +335,64 @@
     <section class="card bulk-card">
       <div class="card-header">
         <h2>Importação em Lote (CSV)</h2>
-        <p>Cole ou importe um CSV com múltiplos usuários para gerar um script completo</p>
+        <p>Cole ou importe um CSV com múltiplos usuários. A OU pode ser definida globalmente abaixo ou individualmente por linha no CSV.</p>
       </div>
+
+      <!-- Seletor de OU Global para o Lote -->
+      <div class="bulk-ou-selector" id="bulkOuSelectorRow">
+        <div class="bulk-ou-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          OU padrão do lote
+          <span class="badge badge-optional">Opcional</span>
+        </div>
+
+        <!-- Campo de pesquisa + dropdown -->
+        <div class="bulk-ou-search-wrap" id="bulkOuSearchWrap">
+          <div class="bulk-ou-input-wrap">
+            <svg class="bulk-ou-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            </svg>
+            <input type="text" id="bulkOuSearch"
+              placeholder="Buscar OU por nome ou caminho (ex: TI, São Paulo)..."
+              autocomplete="off" />
+            <button type="button" class="bulk-ou-clear" id="bulkOuClear" style="display:none" title="Limpar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+          <div class="bulk-ou-dropdown" id="bulkOuDropdown" style="display:none"></div>
+
+          <!-- Chip da OU selecionada -->
+          <div class="bulk-ou-chip" id="bulkOuChip" style="display:none">
+            <span class="bulk-ou-chip-icon">📁</span>
+            <div class="bulk-ou-chip-info">
+              <div class="bulk-ou-chip-name" id="bulkOuChipName"></div>
+              <div class="bulk-ou-chip-dn"  id="bulkOuChipDn"></div>
+            </div>
+            <button type="button" class="bulk-ou-chip-remove" id="bulkOuChipRemove" title="Remover OU">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- input hidden mantém o valor DN para o JS do lote -->
+        <input type="hidden" id="bulkOuSelect" />
+
+        <span class="field-hint">Se o CSV não informar OU, esta será usada. A coluna OU do CSV tem prioridade.</span>
+      </div>
+
+
       <div class="bulk-layout">
         <div class="bulk-left">
           <div class="csv-hint">
             <strong>Formato esperado (sem cabeçalho ou com cabeçalho):</strong>
             <code>NomeCompleto,CPF,OU,Senha</code>
+            <span class="csv-hint-tip">A coluna <em>OU</em> aceita nome (ex: <code>TI</code>) ou DN completo</span>
           </div>
           <textarea id="csvInput"
             placeholder="João Pereira da Silva,123.456.789-09,TI,Senha@2025&#10;Maria Santos Oliveira Junior,98765432100,RH,Senha@2025"></textarea>
@@ -371,6 +422,7 @@
         </div>
       </div>
     </section>
+
 
   </main>
 
