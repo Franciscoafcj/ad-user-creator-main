@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Criação de Usuário AD — Orsegups</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <div class="bg-grid"></div>
+
+  <header class="header">
+    <div class="logo">
+      <div class="logo-icon">AD</div>
+      <div>
+        <span class="logo-title">AD User Creator</span>
+        <span class="logo-sub">Orsegups Participações</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="server-pill" id="serverPill">
+        <span class="dot dot-off"></span> <span id="serverPillText">Servidor offline</span>
+      </div>
+      <div class="status-pill" id="statusPill">
+        <span class="dot"></span> <span id="statusText">Carregando...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Banner de conexão com AD (visível apenas quando AD_DATA disponível) -->
+  <div class="ad-banner" id="adBanner" style="display:none">
+    <div class="ad-banner-inner">
+      <div class="ad-banner-left">
+        <div class="ad-banner-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <div>
+          <div class="ad-banner-title">Conectado ao Active Directory</div>
+          <div class="ad-banner-sub" id="adBannerSub">Carregando...</div>
+        </div>
+      </div>
+      <div class="ad-banner-right">
+        <div class="ad-banner-chip" id="adBannerUser"></div>
+        <div class="ad-banner-chip ad-banner-chip-domain" id="adBannerDomain"></div>
+        <div class="ad-banner-chip ad-banner-chip-ou" id="adBannerOuCount"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Banner de aviso quando AD_DATA não está disponível -->
+  <div class="ad-banner ad-banner-warn" id="adBannerWarn" style="display:none">
+    <div class="ad-banner-inner">
+      <div class="ad-banner-left">
+        <div class="ad-banner-icon ad-banner-icon-warn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+        </div>
+        <div>
+          <div class="ad-banner-title">Dados do AD não carregados</div>
+          <div class="ad-banner-sub">Execute <strong>Get-ADData.ps1</strong> para conectar ao seu Active Directory e carregar o domínio e as OUs reais.</div>
+        </div>
+      </div>
+      <div class="ad-banner-right">
+        <code class="ad-cmd">./Get-ADData.ps1</code>
+      </div>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="card-grid">
+
+      <!-- FORM CARD -->
+      <section class="card form-card">
+        <div class="card-header">
+          <h2>Dados do Usuário</h2>
+          <p>Preencha as informações abaixo para gerar o script PowerShell</p>
+        </div>
+
+        <form id="userForm" novalidate>
+
+          <!-- Nome Completo -->
+          <div class="form-group">
+            <label for="fullName">Nome Completo <span class="req">*</span></label>
+            <input type="text" id="fullName" placeholder="Ex: Francisco de Assis Floriano Correa Junior"
+              autocomplete="off" />
+            <span class="field-hint">Será usado o primeiro nome e o último sobrenome para gerar o login</span>
+            <span class="field-error" id="fullNameError"></span>
+          </div>
+          <!-- Campos ocultos para compatibilidade -->
+          <input type="hidden" id="firstName" />
+          <input type="hidden" id="lastName" />
+
+          <!-- E-mail (auto-gerado) -->
+          <div class="form-group">
+            <label>
+              E-mail
+              <span class="badge badge-auto">Auto</span>
+            </label>
+            <div class="input-readonly-wrap">
+              <input type="text" id="emailPreview" readonly
+                placeholder="primeironome.ultimosobrenome@orsegups.com.br" />
+              <button type="button" class="copy-btn" data-target="emailPreview" title="Copiar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Login / SamAccountName -->
+          <div class="form-group">
+            <label>
+              Login (SamAccountName)
+              <span class="badge badge-auto">Auto</span>
+            </label>
+            <div class="input-readonly-wrap">
+              <input type="text" id="samPreview" readonly placeholder="primeironome.ultimosobrenome" />
+              <button type="button" class="copy-btn" data-target="samPreview" title="Copiar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- CPF -->
+          <div class="form-group">
+            <label for="cpf">CPF <span class="req">*</span></label>
+            <div class="input-with-icon">
+              <input type="text" id="cpf" placeholder="000.000.000-00" maxlength="14" autocomplete="off" />
+              <span class="input-icon" id="cpfStatus"></span>
+            </div>
+            <div class="cpf-preview" id="cpfFormatted"></div>
+            <span class="field-error" id="cpfError"></span>
+          </div>
+
+
+          <!-- OU (Organizational Unit) — seletor visual -->
+          <div class="form-group">
+            <label>Unidade Organizacional (OU)</label>
+            <input type="hidden" id="ou" />
+            <button type="button" class="ou-picker-btn" id="openOuPicker">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              </svg>
+              <span id="ouPickerLabel">Clique para escolher a pasta no AD...</span>
+            </button>
+            <div class="ou-breadcrumb" id="ouBreadcrumb" style="display:none"></div>
+            <span class="field-hint">Deixe sem seleção para usar a OU padrão do domínio</span>
+          </div>
+
+          <!-- Usuário Modelo (opcional) -->
+          <div class="form-group">
+            <label for="templateUserSearch">
+              Usuário Modelo
+              <span class="badge badge-optional">Opcional</span>
+            </label>
+            <div class="user-search-wrap" id="userSearchWrap">
+              <div class="user-search-input-wrap">
+                <svg class="user-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
+                <input type="text" id="templateUserSearch"
+                  placeholder="Buscar por nome ou login (ex: francisco.correa)..."
+                  autocomplete="off" />
+                <button type="button" class="user-search-clear" id="clearTemplateUser" style="display:none" title="Limpar">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="user-dropdown" id="userDropdown" style="display:none"></div>
+              <div class="template-chip" id="templateChip" style="display:none">
+                <div class="template-chip-avatar" id="templateChipAvatar"></div>
+                <div class="template-chip-info">
+                  <div class="template-chip-name" id="templateChipName"></div>
+                  <div class="template-chip-sam" id="templateChipSam"></div>
+                </div>
+                <button type="button" class="template-chip-remove" id="removeTemplateUser" title="Remover modelo">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <input type="hidden" id="templateUser" />
+            <span class="field-hint">Os grupos de segurança do AD serão copiados para o novo usuário</span>
+          </div>
+
+
+          <!-- Domínio -->
+          <div class="form-group">
+            <label for="domain">Domínio AD <span class="req">*</span></label>
+            <input type="text" id="domain" value="orsegups.com.br" placeholder="orsegups.com.br" />
+          </div>
+
+          <!-- Senha -->
+          <div class="form-group">
+            <label for="password">Senha Inicial <span class="req">*</span></label>
+            <div class="input-with-icon">
+              <input type="password" id="password" placeholder="Senha temporária" />
+              <button type="button" class="toggle-pw" id="togglePw" title="Mostrar/ocultar senha">
+                <svg id="eyeOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                <svg id="eyeClosed" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2">
+                  <path
+                    d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </svg>
+              </button>
+            </div>
+            <div class="pw-strength" id="pwStrength">
+              <div class="pw-bar" id="pwBar"></div>
+            </div>
+            <span class="field-hint" id="pwHint">Mínimo 8 caracteres</span>
+          </div>
+
+          <!-- Alterar senha no próximo login -->
+          <div class="form-group toggle-row">
+            <label class="toggle-label" for="mustChange">
+              <span>Forçar troca de senha no próximo login</span>
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="mustChange" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <!-- Conta habilitada -->
+          <div class="form-group toggle-row">
+            <label class="toggle-label" for="enabled">
+              <span>Conta habilitada</span>
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="enabled" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <button type="submit" class="btn-generate" id="generateBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="16 18 22 12 16 6" />
+              <polyline points="8 6 2 12 8 18" />
+            </svg>
+            Gerar Script PowerShell
+          </button>
+        </form>
+      </section>
+
+      <!-- OUTPUT CARD -->
+      <section class="card output-card">
+        <div class="card-header">
+          <h2>Script PowerShell</h2>
+          <div class="output-actions" id="outputActions" style="display:none">
+            <button class="btn-sm" id="copyScriptBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              Copiar
+            </button>
+            <button class="btn-sm btn-download" id="downloadBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Baixar .ps1
+            </button>
+            <div class="btn-separator"></div>
+            <button class="btn-sm btn-execute" id="executeBtn" style="display:none" title="Executar via servidor local (Start-Server.ps1)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+              Executar
+            </button>
+          </div>
+        </div>
+
+        <div class="code-area" id="codeArea">
+          <div class="empty-state" id="emptyState">
+            <div class="empty-icon">
+              <svg viewBox="0 0 64 64" fill="none">
+                <rect x="8" y="8" width="48" height="48" rx="8" stroke="#4f46e5" stroke-width="2"
+                  stroke-dasharray="4 3" />
+                <path d="M22 32h20M22 24h12M22 40h8" stroke="#6366f1" stroke-width="2" stroke-linecap="round" />
+              </svg>
+            </div>
+            <p>Preencha o formulário ao lado e clique em <strong>Gerar Script</strong></p>
+          </div>
+          <pre id="scriptOutput" style="display:none"><code id="scriptCode"></code></pre>
+        </div>
+
+        <!-- Summary -->
+        <div class="summary" id="summary" style="display:none">
+          <h3>Resumo do Usuário</h3>
+          <div class="summary-grid" id="summaryGrid"></div>
+        </div>
+
+        <!-- Terminal de Execução -->
+        <div class="terminal-panel" id="terminalPanel" style="display:none">
+          <div class="terminal-header">
+            <div class="terminal-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+              </svg>
+              Terminal de Execução
+            </div>
+            <div class="terminal-header-right">
+              <span class="terminal-status-badge" id="terminalStatus"></span>
+              <button class="terminal-clear-btn" id="terminalClearBtn" title="Fechar terminal">✕</button>
+            </div>
+          </div>
+          <div class="terminal-output" id="terminalOutput"></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- BULK SECTION -->
+    <section class="card bulk-card">
+      <div class="card-header">
+        <h2>Importação em Lote (CSV)</h2>
+        <p>Cole ou importe um CSV com múltiplos usuários para gerar um script completo</p>
+      </div>
+      <div class="bulk-layout">
+        <div class="bulk-left">
+          <div class="csv-hint">
+            <strong>Formato esperado (sem cabeçalho ou com cabeçalho):</strong>
+            <code>NomeCompleto,CPF,OU,Senha</code>
+          </div>
+          <textarea id="csvInput"
+            placeholder="João Pereira da Silva,123.456.789-09,TI,Senha@2025&#10;Maria Santos Oliveira Junior,98765432100,RH,Senha@2025"></textarea>
+          <div class="bulk-actions">
+            <button class="btn-generate btn-sm-variant" id="bulkBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              Gerar Script em Lote
+            </button>
+          </div>
+        </div>
+        <div class="bulk-right">
+          <div class="code-area bulk-code" id="bulkCodeArea">
+            <div class="empty-state" id="bulkEmptyState">
+              <p>O script em lote aparecerá aqui</p>
+            </div>
+            <pre id="bulkOutput" style="display:none"><code id="bulkCode"></code></pre>
+          </div>
+          <div class="bulk-output-actions" id="bulkOutputActions" style="display:none">
+            <button class="btn-sm" id="copyBulkBtn">Copiar</button>
+            <button class="btn-sm btn-download" id="downloadBulkBtn">Baixar .ps1</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <span>AD User Creator · Orsegups Participações</span>
+    <span>Os scripts gerados devem ser executados com privilégios de Domain Admin</span>
+  </footer>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       MODAL: Seletor Visual de OU (Árvore do AD)
+  ════════════════════════════════════════════════════════ -->
+  <div class="modal-backdrop" id="ouModal" style="display:none">
+    <div class="modal">
+
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+          Selecionar Unidade Organizacional
+        </div>
+        <button class="modal-close" id="closeOuModal" title="Fechar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Coluna esquerda: Árvore -->
+        <div class="tree-panel">
+          <div class="tree-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input type="text" id="treeSearch" placeholder="Buscar OU..." autocomplete="off" />
+          </div>
+          <div class="tree-root" id="adTree"></div>
+        </div>
+
+        <!-- Coluna direita: Detalhes + Gerenciar -->
+        <div class="detail-panel">
+          <div class="detail-selected" id="detailSelected">
+            <div class="detail-icon" id="detailIcon">📁</div>
+            <div id="detailName" class="detail-name">Nenhuma pasta selecionada</div>
+            <div id="detailDn" class="detail-dn">—</div>
+          </div>
+
+          <div class="ou-manager">
+            <div class="ou-manager-title">Gerenciar estrutura de pastas</div>
+
+            <div class="add-ou-form">
+              <select id="addOuParent" class="ou-select"></select>
+              <div class="add-ou-row">
+                <input type="text" id="addOuName" placeholder="Nome da nova OU (ex: TI)" />
+                <button type="button" class="btn-add-ou" id="btnAddOu">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  Adicionar
+                </button>
+              </div>
+            </div>
+
+            <div class="ou-list" id="ouList"></div>
+
+            <button type="button" class="btn-reset-tree" id="btnResetTree">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="1 4 1 10 7 10" />
+                <path d="M3.51 15a9 9 0 1 0 .49-4" />
+              </svg>
+              Restaurar estrutura padrão
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <div class="selected-path-preview" id="selectedPathPreview">Nenhuma OU selecionada — será usada a OU padrão do
+          domínio</div>
+        <div class="modal-footer-actions">
+          <button type="button" class="btn-modal-cancel" id="cancelOuModal">Cancelar</button>
+          <button type="button" class="btn-modal-confirm" id="confirmOuModal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            Confirmar seleção
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ad-data.js é gerado pelo Get-ADData.ps1 e carrega dados reais do AD -->
+  <script src="ad-data.js" onerror="window.AD_DATA=null"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>
