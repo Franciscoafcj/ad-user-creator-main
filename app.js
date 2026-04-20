@@ -771,7 +771,7 @@ document.getElementById('bulkBtn').addEventListener('click', function () {
 
   const users = dataLines.map(line => {
     const [fullNameCsv = '', cpfRaw = '', ouRaw = '', password = 'Mudar@2025'] = parseCsvLine(line);
-    const { first, last } = parseFullName(fullNameCsv.trim());
+    const { first, last, surnames } = parseFullName(fullNameCsv.trim());
     const fn    = normalizeStr(first);
     const ln    = normalizeStr(last);
     const cpf11 = normalizeCPF(cpfRaw) || '00000000000';
@@ -794,7 +794,7 @@ document.getElementById('bulkBtn').addEventListener('click', function () {
     showToast(`⚠ ${unresolved.length} usuário(s) sem OU — será usada a padrão do domínio.`, '#f59e0b');
   }
 
-  const templateUserBulk = document.getElementById('templateUser').value.trim();
+  const templateUserBulk = document.getElementById('templateUserBulk').value.trim();
   const script = generateBulkScript(users, domain, templateUserBulk);
 
   const bulkCode      = document.getElementById('bulkCode');
@@ -1576,31 +1576,35 @@ function initWithADData() {
 initWithADData();
 
 /* ═══════════════════════════════════════════════════════════════
-   USUÁRIO MODELO — Autocomplete
+   USUÁRIO MODELO — Autocomplete (reutilizável)
    Busca contra window.AD_DATA.users (exportado pelo Get-ADData.ps1).
    Se AD_DATA não disponível, permite digitar manualmente o SAM.
+   Instanciado tanto para o formulário individual quanto para o lote.
 ═══════════════════════════════════════════════════════════════ */
 
-(function () {
-  const searchInput    = document.getElementById('templateUserSearch');
-  const dropdown       = document.getElementById('userDropdown');
-  const hiddenInput    = document.getElementById('templateUser');
-  const chip           = document.getElementById('templateChip');
-  const chipAvatar     = document.getElementById('templateChipAvatar');
-  const chipName       = document.getElementById('templateChipName');
-  const chipSam        = document.getElementById('templateChipSam');
-  const clearBtn       = document.getElementById('clearTemplateUser');
-  const removeBtn      = document.getElementById('removeTemplateUser');
+function initUserSearch({
+  searchInputId, dropdownId, hiddenInputId,
+  chipId, chipAvatarId, chipNameId, chipSamId,
+  clearBtnId, removeBtnId,
+}) {
+  const searchInput = document.getElementById(searchInputId);
+  const dropdown    = document.getElementById(dropdownId);
+  const hiddenInput = document.getElementById(hiddenInputId);
+  const chip        = document.getElementById(chipId);
+  const chipAvatar  = document.getElementById(chipAvatarId);
+  const chipName    = document.getElementById(chipNameId);
+  const chipSam     = document.getElementById(chipSamId);
+  const clearBtn    = document.getElementById(clearBtnId);
+  const removeBtn   = document.getElementById(removeBtnId);
 
-  let selectedUser = null;
+  if (!searchInput) return; // elemento não existe na página
+
   let debounceTimer = null;
 
-  /** Obtém a lista de usuários do AD_DATA ou retorna array vazio */
   function getUsers() {
     return (window.AD_DATA && window.AD_DATA.users) ? window.AD_DATA.users : [];
   }
 
-  /** Retorna as iniciais do displayName para o avatar */
   function getInitials(name) {
     if (!name) return '?';
     const parts = name.trim().split(/\s+/);
@@ -1608,24 +1612,21 @@ initWithADData();
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
 
-  /** Destaca o termo buscado no texto */
-  function highlight(text, term) {
+  function hlText(text, term) {
     if (!term) return text;
     const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return text.replace(new RegExp(`(${escaped})`, 'gi'), '<mark>$1</mark>');
   }
 
-  /** Filtra a lista de usuários pelo termo digitado */
   function filterUsers(term) {
     const t = term.toLowerCase();
     return getUsers().filter(u =>
       (u.samAccountName && u.samAccountName.toLowerCase().includes(t)) ||
       (u.displayName    && u.displayName.toLowerCase().includes(t))    ||
       (u.department     && u.department.toLowerCase().includes(t))
-    ).slice(0, 10); // máx 10 resultados
+    ).slice(0, 10);
   }
 
-  /** Renderiza o dropdown com os resultados */
   function renderDropdown(results, term) {
     dropdown.innerHTML = '';
     if (!results.length) {
@@ -1639,7 +1640,6 @@ initWithADData();
       dropdown.style.display = 'block';
       return;
     }
-
     results.forEach(u => {
       const item = document.createElement('div');
       item.className = 'user-dropdown-item';
@@ -1647,28 +1647,20 @@ initWithADData();
       item.innerHTML = `
         <div class="user-dropdown-avatar">${initials}</div>
         <div class="user-dropdown-info">
-          <div class="user-dropdown-name">${highlight(u.displayName || u.samAccountName, term)}</div>
+          <div class="user-dropdown-name">${hlText(u.displayName || u.samAccountName, term)}</div>
           <div class="user-dropdown-meta">
-            <span class="user-dropdown-sam">${highlight(u.samAccountName, term)}</span>
+            <span class="user-dropdown-sam">${hlText(u.samAccountName, term)}</span>
             ${u.department ? `<span class="user-dropdown-dept">${u.department}</span>` : ''}
           </div>
         </div>`;
-      item.addEventListener('mousedown', e => {
-        e.preventDefault(); // evita blur antes do click
-        selectUser(u);
-      });
+      item.addEventListener('mousedown', e => { e.preventDefault(); selectUser(u); });
       dropdown.appendChild(item);
     });
-
     dropdown.style.display = 'block';
   }
 
-  /** Seleciona um usuário modelo */
   function selectUser(u) {
-    selectedUser = u;
     hiddenInput.value = u.samAccountName;
-
-    // Mostra chip
     const initials = getInitials(u.displayName || u.samAccountName);
     chipAvatar.textContent = initials;
     chipName.textContent   = u.displayName || u.samAccountName;
@@ -1676,40 +1668,28 @@ initWithADData();
       + (u.department ? ` · ${u.department}` : '')
       + (u.title      ? ` · ${u.title}`      : '');
     chip.style.display = 'flex';
-
-    // Limpa input de busca
-    searchInput.value     = '';
+    searchInput.value      = '';
     clearBtn.style.display = 'none';
     dropdown.style.display = 'none';
   }
 
-  /** Remove o usuário modelo selecionado */
   function clearSelection() {
-    selectedUser      = null;
-    hiddenInput.value = '';
-    chip.style.display = 'none';
-    searchInput.value = '';
+    hiddenInput.value      = '';
+    chip.style.display     = 'none';
+    searchInput.value      = '';
     clearBtn.style.display = 'none';
   }
-
-  /* ── Eventos ── */
 
   searchInput.addEventListener('input', function () {
     const term = this.value.trim();
     clearBtn.style.display = term ? 'flex' : 'none';
-
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-      if (term.length < 2) {
-        dropdown.style.display = 'none';
-        return;
-      }
-
+      if (term.length < 2) { dropdown.style.display = 'none'; return; }
       const users = getUsers();
       if (!users.length) {
-        // Sem AD_DATA: aceita o SAM digitado diretamente
-        hiddenInput.value      = term;
-        dropdown.innerHTML     = `
+        hiddenInput.value  = term;
+        dropdown.innerHTML = `
           <div class="user-dropdown-manual">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
               <circle cx="12" cy="12" r="10"/>
@@ -1721,18 +1701,15 @@ initWithADData();
         dropdown.style.display = 'block';
         return;
       }
-
-      const results = filterUsers(term);
-      renderDropdown(results, term);
+      renderDropdown(filterUsers(term), term);
     }, 200);
   });
 
   searchInput.addEventListener('keydown', function (e) {
-    const items = dropdown.querySelectorAll('.user-dropdown-item');
+    const items  = dropdown.querySelectorAll('.user-dropdown-item');
     const active = dropdown.querySelector('.user-dropdown-item.focused');
     if (e.key === 'Escape') { dropdown.style.display = 'none'; return; }
     if (!items.length) return;
-
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       const next = active ? active.nextElementSibling : items[0];
@@ -1746,33 +1723,54 @@ initWithADData();
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (active) {
-        const idx = [...items].indexOf(active);
+        const idx     = [...items].indexOf(active);
         const results = filterUsers(searchInput.value.trim());
         if (results[idx]) selectUser(results[idx]);
       }
     }
   });
 
-  searchInput.addEventListener('blur', () => {
-    // Pequeno delay para permitir o mousedown do item
-    setTimeout(() => { dropdown.style.display = 'none'; }, 150);
-  });
-
+  searchInput.addEventListener('blur',  () => setTimeout(() => { dropdown.style.display = 'none'; }, 150));
   searchInput.addEventListener('focus', () => {
-    if (searchInput.value.trim().length >= 2) {
+    if (searchInput.value.trim().length >= 2)
       renderDropdown(filterUsers(searchInput.value.trim()), searchInput.value.trim());
-    }
   });
 
   clearBtn.addEventListener('click', () => {
-    searchInput.value = '';
+    searchInput.value      = '';
     clearBtn.style.display = 'none';
     dropdown.style.display = 'none';
-    hiddenInput.value = '';
+    hiddenInput.value      = '';
   });
 
   removeBtn.addEventListener('click', clearSelection);
-})();
+}
+
+// ── Instância para o formulário individual ──
+initUserSearch({
+  searchInputId : 'templateUserSearch',
+  dropdownId    : 'userDropdown',
+  hiddenInputId : 'templateUser',
+  chipId        : 'templateChip',
+  chipAvatarId  : 'templateChipAvatar',
+  chipNameId    : 'templateChipName',
+  chipSamId     : 'templateChipSam',
+  clearBtnId    : 'clearTemplateUser',
+  removeBtnId   : 'removeTemplateUser',
+});
+
+// ── Instância para o formulário de lote ──
+initUserSearch({
+  searchInputId : 'templateUserSearchBulk',
+  dropdownId    : 'userDropdownBulk',
+  hiddenInputId : 'templateUserBulk',
+  chipId        : 'templateChipBulk',
+  chipAvatarId  : 'templateChipAvatarBulk',
+  chipNameId    : 'templateChipNameBulk',
+  chipSamId     : 'templateChipSamBulk',
+  clearBtnId    : 'clearTemplateUserBulk',
+  removeBtnId   : 'removeTemplateUserBulk',
+});
 
 /* ═══════════════════════════════════════════════════════════════
    SERVIDOR LOCAL — Integração com Start-Server.ps1

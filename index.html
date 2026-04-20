@@ -409,6 +409,45 @@
           </div>
           <textarea id="csvInput"
             placeholder="João Pereira da Silva,123.456.789-09,TI,Senha@2025&#10;Maria Santos Oliveira Junior,98765432100,RH,Senha@2025"></textarea>
+          <!-- Usuário Modelo para o Lote -->
+          <div class="form-group" style="margin-top:12px;">
+            <label for="templateUserSearchBulk">
+              Usuário Modelo
+              <span class="badge badge-optional">Opcional</span>
+            </label>
+            <div class="user-search-wrap" id="userSearchWrapBulk">
+              <div class="user-search-input-wrap">
+                <svg class="user-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
+                <input type="text" id="templateUserSearchBulk"
+                  placeholder="Buscar por nome ou login (ex: francisco.correa)..."
+                  autocomplete="off" />
+                <button type="button" class="user-search-clear" id="clearTemplateUserBulk" style="display:none" title="Limpar">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="user-dropdown" id="userDropdownBulk" style="display:none"></div>
+              <div class="template-chip" id="templateChipBulk" style="display:none">
+                <div class="template-chip-avatar" id="templateChipAvatarBulk"></div>
+                <div class="template-chip-info">
+                  <div class="template-chip-name" id="templateChipNameBulk"></div>
+                  <div class="template-chip-sam" id="templateChipSamBulk"></div>
+                </div>
+                <button type="button" class="template-chip-remove" id="removeTemplateUserBulk" title="Remover modelo">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <input type="hidden" id="templateUserBulk" />
+            <span class="field-hint">Os grupos de segurança do AD serão copiados para todos os novos usuários</span>
+          </div>
+
           <div class="bulk-actions">
             <button class="btn-generate btn-sm-variant" id="bulkBtn">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
