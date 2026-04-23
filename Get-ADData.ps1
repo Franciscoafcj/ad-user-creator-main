@@ -104,11 +104,11 @@ try {
 # ══════════════════════════════════════════════════════════════════
 Write-Host "[ 4/4 ] Coletando usuários do domínio..." -NoNewline
 try {
-    $allUsers = Get-ADUser -Filter { Enabled -eq $true } `
-                    -Properties DisplayName, SamAccountName, UserPrincipalName, EmailAddress, Title, Department `
+    $allUsers = Get-ADUser -Filter * `
+                    -Properties DisplayName, SamAccountName, UserPrincipalName, EmailAddress, Title, Department, Enabled `
                     -ErrorAction Stop |
                 Sort-Object DisplayName |
-                Select-Object SamAccountName, UserPrincipalName, EmailAddress, DisplayName, Title, Department
+                Select-Object SamAccountName, UserPrincipalName, EmailAddress, DisplayName, Title, Department, Enabled
 
     Write-Host " OK ($($allUsers.Count) usuários encontrados)" -ForegroundColor Green
 } catch {
@@ -136,6 +136,7 @@ $userList = $allUsers | ForEach-Object {
         displayName        = if ($_.DisplayName)       { $_.DisplayName }       else { $_.SamAccountName }
         title              = if ($_.Title)              { $_.Title }             else { '' }
         department         = if ($_.Department)         { $_.Department }        else { '' }
+        enabled            = if ($_.Enabled -eq $true)  { $true }                else { $false }
     }
 }
 

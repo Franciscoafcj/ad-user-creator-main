@@ -1189,15 +1189,32 @@ textarea {
 
 .bulk-ou-drop-info { flex: 1; min-width: 0; }
 
-.bulk-ou-drop-path {
-  font-size: 13px; font-weight: 500; color: var(--text);
+/* OU leaf name (prominent) + parent breadcrumb (muted inline) */
+.bulk-ou-drop-leaf {
+  font-size: 13px; font-weight: 600; color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: flex; align-items: baseline; gap: 0; flex-wrap: nowrap;
 }
-.bulk-ou-drop-path mark {
+.bulk-ou-drop-leaf mark {
   background: #f59e0b33; color: var(--warning);
   border-radius: 2px; padding: 0 2px;
 }
 
+/* Caminho pai — inline, mais apagado */
+.bulk-ou-drop-parent {
+  font-size: 11px; font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex-shrink: 1;
+  padding-left: 2px;
+}
+.bulk-ou-drop-parent mark {
+  background: #f59e0b22; color: #f59e0bbb;
+  border-radius: 2px; padding: 0 2px;
+}
+
+
+/* DN abaixo (monospace, minúsculo) */
 .bulk-ou-drop-dn {
   font-size: 10px; color: var(--text-muted);
   font-family: monospace; word-break: break-all;
@@ -1312,4 +1329,244 @@ textarea {
   box-shadow: 0 4px 14px var(--primary-glow);
 }
 .sam-alt-btn:active { transform: translateY(0); }
+
+/* ===========================
+   TAB NAVIGATION
+=========================== */
+.tab-nav-wrap {
+  position: relative; z-index: 1;
+  max-width: 1300px; margin: 0 auto;
+  padding: 20px 24px 0;
+}
+
+.tab-nav {
+  display: flex; align-items: center; gap: 4px;
+  border-bottom: 1px solid var(--card-border);
+  padding-bottom: 0;
+}
+
+.tab-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 20px;
+  background: none; border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  margin-bottom: -1px;
+  position: relative;
+}
+.tab-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+.tab-btn:hover { color: var(--text); background: #ffffff07; }
+.tab-btn.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  background: #6366f10a;
+}
+.tab-btn:nth-child(2).active {
+  color: var(--danger);
+  border-bottom-color: var(--danger);
+  background: #ef444408;
+}
+
+/* ===========================
+   DISABLE PANEL WRAPPER
+=========================== */
+.disable-panel { width: 100%; }
+
+.disable-form-body {
+  padding: 22px 26px 26px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+
+.disable-options {
+  display: flex; flex-direction: column; gap: 8px;
+}
+
+/* Danger gradient button variant */
+.btn-danger-gradient {
+  background: linear-gradient(135deg, #dc2626, #ef4444) !important;
+  box-shadow: 0 4px 20px #ef444440 !important;
+}
+.btn-danger-gradient:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 8px 28px #ef444455 !important;
+}
+.btn-danger-gradient:disabled {
+  background: #ffffff10 !important;
+  box-shadow: none !important;
+  color: var(--text-muted) !important;
+  cursor: not-allowed; opacity: .6;
+}
+
+/* ===========================
+   DISABLE USER CHIP
+=========================== */
+.disable-user-chip {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #ef444415, #dc262608);
+  border: 1px solid #ef444433;
+  border-radius: var(--radius-sm);
+  animation: fadeIn .2s ease;
+  margin-top: 4px;
+}
+
+.disable-chip-avatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: linear-gradient(135deg, #dc2626, #ef4444);
+  display: grid; place-items: center;
+  font-size: 13px; font-weight: 700; color: #fff;
+  flex-shrink: 0; letter-spacing: .5px;
+  box-shadow: 0 0 14px #ef444440;
+}
+
+.disable-chip-info { flex: 1; min-width: 0; }
+.disable-chip-name {
+  font-size: 14px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.disable-chip-meta {
+  font-size: 11px; color: var(--text-muted); margin-top: 2px;
+  font-family: monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.disable-chip-status {
+  font-size: 11px; font-weight: 600;
+  padding: 3px 10px; border-radius: 99px;
+  white-space: nowrap; flex-shrink: 0;
+}
+.disable-status-enabled {
+  background: #10b98118; color: var(--success);
+  border: 1px solid #10b98130;
+}
+.disable-status-disabled {
+  background: #ef444415; color: var(--danger);
+  border: 1px solid #ef444430;
+}
+
+/* ===========================
+   DISABLE SUB-TABS
+=========================== */
+.disable-subtab-nav {
+  display: flex; align-items: center; gap: 4px;
+  padding: 16px 0 0;
+  border-bottom: 1px solid var(--card-border);
+  margin-bottom: 0;
+}
+
+.disable-subtab-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 18px;
+  background: none; border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  margin-bottom: -1px;
+  position: relative;
+}
+.disable-subtab-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+.disable-subtab-btn:hover { color: var(--text); background: #ffffff07; }
+.disable-subtab-btn.active {
+  color: var(--danger);
+  border-bottom-color: var(--danger);
+  background: #ef444408;
+}
+
+/* Badge de contagem no botão Em Lote */
+.disable-bulk-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px;
+  background: var(--danger); color: #fff;
+  font-size: 10px; font-weight: 700;
+  border-radius: 99px; padding: 0 5px;
+  margin-left: 2px;
+  animation: fadeIn .15s ease;
+}
+
+/* ===========================
+   DISABLE BULK LIST
+=========================== */
+.disable-bulk-list-wrap {
+  background: #ffffff05;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  animation: fadeIn .2s ease;
+}
+
+.disable-bulk-list-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px;
+  background: #ef444408;
+  border-bottom: 1px solid #ef444418;
+  font-size: 12px; font-weight: 500; color: var(--danger);
+}
+
+.disable-bulk-clear-all {
+  display: flex; align-items: center; gap: 5px;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-family: inherit;
+  font-size: 11px; font-weight: 500;
+  padding: 3px 8px; border-radius: 5px;
+  transition: color var(--transition), background var(--transition);
+}
+.disable-bulk-clear-all svg { width: 12px; height: 12px; }
+.disable-bulk-clear-all:hover { color: var(--danger); background: #ef444415; }
+
+.disable-bulk-list {
+  max-height: 240px; overflow-y: auto;
+}
+.disable-bulk-list::-webkit-scrollbar { width: 3px; }
+.disable-bulk-list::-webkit-scrollbar-thumb { background: #ef444430; border-radius: 99px; }
+
+/* Item da lista */
+.disable-bulk-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #ffffff06;
+  transition: background var(--transition);
+  animation: fadeIn .15s ease;
+}
+.disable-bulk-item:last-child { border-bottom: none; }
+.disable-bulk-item:hover { background: #ffffff05; }
+
+.disable-bulk-item-avatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: linear-gradient(135deg, #dc2626, #ef4444);
+  display: grid; place-items: center;
+  font-size: 10px; font-weight: 700; color: #fff;
+  flex-shrink: 0;
+}
+
+.disable-bulk-item-info { flex: 1; min-width: 0; }
+.disable-bulk-item-name {
+  font-size: 12px; font-weight: 500; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.disable-bulk-item-sam {
+  font-size: 11px; color: var(--accent2); font-family: monospace;
+}
+
+.disable-bulk-item-status {
+  font-size: 10px; font-weight: 600;
+  padding: 2px 7px; border-radius: 99px;
+  white-space: nowrap; flex-shrink: 0;
+}
+
+.disable-bulk-item-remove {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); padding: 3px; border-radius: 4px;
+  display: flex; align-items: center;
+  transition: color var(--transition), background var(--transition);
+  flex-shrink: 0;
+}
+.disable-bulk-item-remove svg { width: 13px; height: 13px; display: block; }
+.disable-bulk-item-remove:hover { color: var(--danger); background: #ef444415; }
 

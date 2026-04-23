@@ -770,7 +770,7 @@ document.getElementById('bulkBtn').addEventListener('click', function () {
   const globalOU = bulkOuSelect ? bulkOuSelect.value : '';
 
   const users = dataLines.map(line => {
-    const [fullNameCsv = '', cpfRaw = '', ouRaw = '', password = 'Mudar@2025'] = parseCsvLine(line);
+    const [fullNameCsv = '', cpfRaw = '', password = 'Mudar@2025'] = parseCsvLine(line);
     const { first, last, surnames } = parseFullName(fullNameCsv.trim());
     const fn    = normalizeStr(first);
     const ln    = normalizeStr(last);
@@ -778,10 +778,8 @@ document.getElementById('bulkBtn').addEventListener('click', function () {
     const sam   = ln ? `${fn}.${ln}` : fn;
     const email = `${sam}@${domain}`;
 
-    // Resolução de OU: prioridade CSV → seletor global → vazio (padrão do domínio)
-    const ouResolved = resolveOuFromInput(ouRaw.trim()) ||
-                       resolveOuFromInput(globalOU)     ||
-                       '';
+    // OU vem exclusivamente do seletor global
+    const ouResolved = resolveOuFromInput(globalOU) || '';
 
     return { firstName: first, lastName: last, surnames, sam, email, cpf11, ou: ouResolved, password };
   }).filter(u => u.firstName && u.lastName);
@@ -958,20 +956,29 @@ function renderTree(filter) {
   if (expandedIds.has('__root__')) {
     const childrenWrap = document.createElement('div');
     childrenWrap.className = 'tree-children';
-    ouTree.forEach(node => renderNode(node, [], childrenWrap, filter, domain));
+    ouTree.forEach(node => renderNode(node, [], childrenWrap, filter, domain, false));
     adTreeEl.appendChild(childrenWrap);
   }
 }
 
-function renderNode(node, parentTrail, container, filter, domain) {
+/**
+ * @param {boolean} parentMatched - true quando um ancestral já correspondeu ao filtro.
+ *   Nesse caso, todos os descendentes devem ser exibidos (o usuário achou a pasta-pai
+ *   e quer ver o que há dentro dela).
+ */
+function renderNode(node, parentTrail, container, filter, domain, parentMatched) {
   const trail = [...parentTrail, node.name];
-  // Prioridade: DN exato do AD → DN calculado como fallback
   const dn    = node.exactDn || buildDN(trail, domain);
   const hasChildren = !!(node.children && node.children.length);
 
-  const matchesSelf  = !filter || node.name.toLowerCase().includes(filter.toLowerCase());
-  const childrenHit  = hasChildren && nodeOrChildMatches(node, filter);
-  if (filter && !matchesSelf && !childrenHit) return;
+  const matchesSelf = !filter || node.name.toLowerCase().includes(filter.toLowerCase());
+  const childrenHit = hasChildren && nodeOrChildMatches(node, filter);
+
+  // Oculta apenas se: há filtro E nem este nó nem nenhum filho corresponde E o pai também não correspondeu
+  if (filter && !matchesSelf && !childrenHit && !parentMatched) return;
+
+  // Se este nó corresponde, seus filhos são exibidos independentemente do filtro
+  const thisMatched = parentMatched || matchesSelf;
 
   const { wrapper } = createNodeRow({
     id: node.id, name: node.name, icon: node.icon || '📁',
@@ -983,7 +990,9 @@ function renderNode(node, parentTrail, container, filter, domain) {
   if (hasChildren && expandedIds.has(node.id)) {
     const childrenWrap = document.createElement('div');
     childrenWrap.className = 'tree-children';
-    node.children.forEach(child => renderNode(child, trail, childrenWrap, filter, domain));
+    node.children.forEach(child =>
+      renderNode(child, trail, childrenWrap, filter, domain, thisMatched)
+    );
     wrapper.appendChild(childrenWrap);
   }
 }
@@ -1412,11 +1421,13 @@ function initWithADData() {
 
       if (!searchEl) return; // sem AD_DATA ainda
 
-      /** Lista canônica de OUs ordenada por profundidade depois alfabética */
+      /** Lista canônica de OUs ordenada: primeiro as mais profundas (mais úteis), depois alfabética */
       const sorted = [...ous].sort((a, b) => {
         const da = a.distinguishedName.split(',').filter(p => p.toUpperCase().startsWith('OU=')).length;
         const db = b.distinguishedName.split(',').filter(p => p.toUpperCase().startsWith('OU=')).length;
-        return da !== db ? da - db : a.name.localeCompare(b.name, 'pt-BR');
+        // OUs mais profundas primeiro (subpastas appearão antes das pastas pai)
+        if (da !== db) return db - da;
+        return a.distinguishedName.localeCompare(b.distinguishedName, 'pt-BR');
       });
 
       /** Retorna caminho pai→filho ex: ["Usuarios", "TI"] */
@@ -1461,12 +1472,13 @@ function initWithADData() {
           return;
         }
 
-        // Limita a 60 resultados para performance
-        const slice = results.slice(0, 60);
+        // Limita a 80 resultados para performance
+        const slice = results.slice(0, 80);
         slice.forEach((ou, idx) => {
-          const path  = ouPath(ou);
-          const icon  = guessOuIcon(ou.name);
-          const label = path.join(' › ');
+          const path     = ouPath(ou);
+          const icon     = guessOuIcon(ou.name);
+          const leafName = path[path.length - 1] || ou.name;          // última parte = nome da OU
+          const parentPath = path.slice(0, -1).join(' › ');            // caminho pai sem a folha
 
           const item = document.createElement('div');
           item.className = 'bulk-ou-drop-item';
@@ -1474,7 +1486,7 @@ function initWithADData() {
           item.innerHTML = `
             <span class="bulk-ou-drop-icon">${icon}</span>
             <div class="bulk-ou-drop-info">
-              <div class="bulk-ou-drop-path">${hl(label, term)}</div>
+              <div class="bulk-ou-drop-leaf">${hl(leafName, term)}${parentPath ? `<span class="bulk-ou-drop-parent"> › ${hl(parentPath, term)}</span>` : ''}</div>
               <div class="bulk-ou-drop-dn">${hl(ou.distinguishedName, term)}</div>
             </div>`;
           item.addEventListener('mousedown', e => {
@@ -1484,10 +1496,10 @@ function initWithADData() {
           dropEl.appendChild(item);
         });
 
-        if (results.length > 60) {
+        if (results.length > 80) {
           const more = document.createElement('div');
           more.className = 'bulk-ou-drop-more';
-          more.textContent = `+ ${results.length - 60} resultados — refine a busca`;
+          more.textContent = `+ ${results.length - 80} resultados — refine a busca`;
           dropEl.appendChild(more);
         }
 
@@ -1496,8 +1508,9 @@ function initWithADData() {
 
       /** Seleciona uma OU */
       function select(ou) {
+        const path = ouPath(ou);
         hiddenEl.value = ou.distinguishedName;
-        chipName.textContent = ouPath(ou).join(' › ');
+        chipName.textContent = path.join(' › ');
         chipDnEl.textContent = ou.distinguishedName;
         chipEl.querySelector('.bulk-ou-chip-icon').textContent = guessOuIcon(ou.name);
         chipEl.style.display = 'flex';
@@ -1530,7 +1543,7 @@ function initWithADData() {
       searchEl.addEventListener('focus', function () {
         const term = this.value.trim();
         if (term.length >= 1) renderDrop(filter(term), term);
-        else if (!hiddenEl.value) renderDrop(sorted.slice(0, 30), ''); // mostra top-30 ao abrir
+        else if (!hiddenEl.value) renderDrop(sorted.slice(0, 50), ''); // mostra top-50 ao abrir (subpastas primeiro)
       });
 
       searchEl.addEventListener('blur', () => {
@@ -1952,4 +1965,1243 @@ initUserSearch({
   /* ── Inicialização ── */
   checkServer();
   setInterval(checkServer, 15000); // re-verifica a cada 15s
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   TAB SWITCHING
+   Controla a visibilidade dos painéis principal e "Desabilitar"
+═══════════════════════════════════════════════════════════════ */
+(function () {
+  const tabCreate  = document.getElementById('tabBtnCreate');
+  const tabDisable = document.getElementById('tabBtnDisable');
+  const mainPanel  = document.querySelector('main.container');
+  const disPanel   = document.getElementById('panelDisable');
+
+  function showTab(name) {
+    if (name === 'create') {
+      tabCreate.classList.add('active');  tabCreate.setAttribute('aria-selected', 'true');
+      tabDisable.classList.remove('active'); tabDisable.setAttribute('aria-selected', 'false');
+      mainPanel.style.display  = '';
+      disPanel.style.display   = 'none';
+    } else {
+      tabDisable.classList.add('active'); tabDisable.setAttribute('aria-selected', 'true');
+      tabCreate.classList.remove('active'); tabCreate.setAttribute('aria-selected', 'false');
+      mainPanel.style.display  = 'none';
+      disPanel.style.display   = '';
+    }
+  }
+
+  tabCreate.addEventListener('click',  () => showTab('create'));
+  tabDisable.addEventListener('click', () => showTab('disable'));
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   DESABILITAR USUÁRIO — Gerador de Script PowerShell
+═══════════════════════════════════════════════════════════════ */
+
+/**
+ * Gera script PowerShell para desabilitar uma conta no AD.
+ * @param {Object} opts
+ */
+function generateDisableScript({ sam, displayName, reason, moveOu, targetOu, expirePassword }) {
+  const timestamp = new Date().toLocaleString('pt-BR');
+  const reasonLine = reason ? `# Motivo  : ${reason}` : '';
+
+  const lines = [
+    `# ================================================================`,
+    `# Script de Desabilitação de Usuário no Active Directory`,
+    `# Gerado em: ${timestamp}`,
+    `# Usuário: ${displayName || sam}`,
+    ...(reasonLine ? [reasonLine] : []),
+    `# ================================================================`,
+    ``,
+    `Import-Module ActiveDirectory -ErrorAction Stop`,
+    ``,
+    `# ── Dados do Usuário ────────────────────────────────────────────`,
+    `$SamAccount = "${sam}"`,
+    ...(reason ? [`$Motivo    = "${reason}"`] : []),
+    ``,
+    `# ── Desabilitar conta ───────────────────────────────────────────`,
+    `try {`,
+    `    $User = Get-ADUser -Identity $SamAccount -ErrorAction Stop`,
+    ``,
+    `    # Desabilita a conta`,
+    `    Disable-ADAccount -Identity $SamAccount -ErrorAction Stop`,
+    `    Write-Host "✅ Conta '$SamAccount' desabilitada com sucesso!" -ForegroundColor Green`,
+  ];
+
+  if (expirePassword) {
+    lines.push(
+      ``,
+      `    # Expira a senha imediatamente`,
+      `    Set-ADUser -Identity $SamAccount -PasswordNeverExpires $false -ErrorAction SilentlyContinue`,
+      `    Set-ADUser -Identity $SamAccount -ChangePasswordAtLogon $true -ErrorAction SilentlyContinue`,
+      `    Write-Host "   🔑 Senha expirada — usuário deverá redefinir ao próximo login." -ForegroundColor Cyan`,
+    );
+  }
+
+  if (moveOu && targetOu) {
+    lines.push(
+      ``,
+      `    # Move para OU de desabilitados`,
+      `    $TargetOU = "${targetOu}"`,
+      `    Move-ADObject -Identity $User.DistinguishedName -TargetPath $TargetOU -ErrorAction Stop`,
+      `    Write-Host "   📂 Conta movida para: $TargetOU" -ForegroundColor Cyan`,
+    );
+  }
+
+  if (reason) {
+    lines.push(
+      ``,
+      `    # Registra motivo na descrição da conta`,
+      `    $DataHoje = (Get-Date).ToString("dd/MM/yyyy")`,
+      `    Set-ADUser -Identity $SamAccount -Description "DESABILITADO em $DataHoje - $Motivo" -ErrorAction SilentlyContinue`,
+      `    Write-Host "   📝 Motivo registrado na descrição da conta." -ForegroundColor Cyan`,
+    );
+  }
+
+  lines.push(
+    ``,
+    `    Write-Host ""`,
+    `    Write-Host "✅ Operação concluída!" -ForegroundColor Green`,
+    ``,
+    `} catch {`,
+    `    Write-Error "❌ Falha ao desabilitar '$SamAccount': $_"`,
+    `    exit 1`,
+    `}`,
+  );
+
+  return lines.join('\n');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DESABILITAR USUÁRIO — Autocomplete de busca
+═══════════════════════════════════════════════════════════════ */
+(function () {
+  const searchEl   = document.getElementById('disableUserSearch');
+  const clearEl    = document.getElementById('clearDisableUser');
+  const dropEl     = document.getElementById('disableUserDropdown');
+  const chipEl     = document.getElementById('disableUserChip');
+  const avatarEl   = document.getElementById('disableChipAvatar');
+  const nameEl     = document.getElementById('disableChipName');
+  const metaEl     = document.getElementById('disableChipMeta');
+  const statusEl   = document.getElementById('disableChipStatus');
+  const removeEl   = document.getElementById('removeDisableUser');
+  const hiddenEl   = document.getElementById('disableUserSam');
+  const genBtn     = document.getElementById('generateDisableBtn');
+
+  if (!searchEl) return;
+
+  let debounceTimer = null;
+  let selectedUser  = null;
+
+  function getUsers() {
+    return (window.AD_DATA && window.AD_DATA.users) ? window.AD_DATA.users : [];
+  }
+
+  function getInitials(name) {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  function hlText(text, term) {
+    if (!term) return text;
+    const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return text.replace(new RegExp(`(${esc})`, 'gi'), '<mark>$1</mark>');
+  }
+
+  function filterUsers(term) {
+    const t = term.toLowerCase();
+    return getUsers().filter(u =>
+      (u.samAccountName && u.samAccountName.toLowerCase().includes(t)) ||
+      (u.displayName    && u.displayName.toLowerCase().includes(t))    ||
+      (u.department     && u.department.toLowerCase().includes(t))
+    ).slice(0, 12);
+  }
+
+  function renderDrop(results, term) {
+    dropEl.innerHTML = '';
+    if (!results.length) {
+      dropEl.innerHTML = `
+        <div class="user-dropdown-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          Nenhum usuário encontrado
+        </div>`;
+      dropEl.style.display = 'block';
+      return;
+    }
+    results.forEach(u => {
+      const item = document.createElement('div');
+      item.className = 'user-dropdown-item';
+      const initials = getInitials(u.displayName || u.samAccountName);
+      const isDisabled = u.enabled === false;
+      item.innerHTML = `
+        <div class="user-dropdown-avatar" style="${isDisabled ? 'background:linear-gradient(135deg,#6b7280,#9ca3af)' : ''}">${initials}</div>
+        <div class="user-dropdown-info">
+          <div class="user-dropdown-name">${hlText(u.displayName || u.samAccountName, term)}
+            ${isDisabled ? '<span style="font-size:10px;background:#ef444420;color:#ef4444;border:1px solid #ef444430;border-radius:99px;padding:1px 7px;margin-left:6px;">Já desabilitado</span>' : ''}
+          </div>
+          <div class="user-dropdown-meta">
+            <span class="user-dropdown-sam">${hlText(u.samAccountName, term)}</span>
+            ${u.department ? `<span class="user-dropdown-dept">${u.department}</span>` : ''}
+            ${u.title ? `<span class="user-dropdown-dept">${u.title}</span>` : ''}
+          </div>
+        </div>`;
+      item.addEventListener('mousedown', e => { e.preventDefault(); selectUser(u); });
+      dropEl.appendChild(item);
+    });
+    dropEl.style.display = 'block';
+  }
+
+  function selectUser(u) {
+    selectedUser = u;
+    hiddenEl.value = u.samAccountName;
+
+    const initials = getInitials(u.displayName || u.samAccountName);
+    avatarEl.textContent = initials;
+    nameEl.textContent   = u.displayName || u.samAccountName;
+    metaEl.textContent   = u.samAccountName
+      + (u.department ? ` · ${u.department}` : '')
+      + (u.title ? ` · ${u.title}` : '');
+
+    const isDisabled = u.enabled === false;
+    statusEl.textContent  = isDisabled ? '● Já desabilitado' : '● Conta ativa';
+    statusEl.className    = 'disable-chip-status ' +
+      (isDisabled ? 'disable-status-disabled' : 'disable-status-enabled');
+
+    chipEl.style.display   = 'flex';
+    searchEl.value         = '';
+    clearEl.style.display  = 'none';
+    dropEl.style.display   = 'none';
+
+    // Habilita o botão de gerar script
+    genBtn.disabled = false;
+  }
+
+  function clearSelection() {
+    selectedUser         = null;
+    hiddenEl.value       = '';
+    chipEl.style.display = 'none';
+    searchEl.value       = '';
+    clearEl.style.display = 'none';
+    genBtn.disabled      = true;
+  }
+
+  searchEl.addEventListener('input', function () {
+    const term = this.value.trim();
+    clearEl.style.display = term ? 'flex' : 'none';
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      if (term.length < 2) { dropEl.style.display = 'none'; return; }
+      const users = getUsers();
+      if (!users.length) {
+        // Sem AD_DATA: permite digitar o SAM manualmente
+        hiddenEl.value = term;
+        dropEl.innerHTML = `
+          <div class="user-dropdown-manual">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            AD não conectado — usando <strong>${term}</strong> como SAM
+          </div>`;
+        dropEl.style.display = 'block';
+        genBtn.disabled = false;
+        return;
+      }
+      renderDrop(filterUsers(term), term);
+    }, 200);
+  });
+
+  searchEl.addEventListener('focus', function () {
+    const term = this.value.trim();
+    if (term.length >= 2) renderDrop(filterUsers(term), term);
+  });
+
+  searchEl.addEventListener('blur', () => setTimeout(() => { dropEl.style.display = 'none'; }, 150));
+
+  searchEl.addEventListener('keydown', function (e) {
+    const items  = dropEl.querySelectorAll('.user-dropdown-item');
+    const active = dropEl.querySelector('.user-dropdown-item.focused');
+    if (e.key === 'Escape') { dropEl.style.display = 'none'; return; }
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = active ? active.nextElementSibling : items[0];
+      active?.classList.remove('focused');
+      if (next?.classList.contains('user-dropdown-item')) next.classList.add('focused');
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = active?.previousElementSibling;
+      active?.classList.remove('focused');
+      if (prev?.classList.contains('user-dropdown-item')) prev.classList.add('focused');
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (active) {
+        const idx = [...items].indexOf(active);
+        const term = searchEl.value.trim();
+        const results = filterUsers(term);
+        if (results[idx]) selectUser(results[idx]);
+      }
+    }
+  });
+
+  clearEl.addEventListener('click', () => {
+    searchEl.value = '';
+    clearEl.style.display = 'none';
+    dropEl.style.display  = 'none';
+    hiddenEl.value = '';
+  });
+  removeEl.addEventListener('click', clearSelection);
+
+  /* ── Toggle da linha de OU de destino ── */
+  document.getElementById('disableMoveOu').addEventListener('change', function () {
+    document.getElementById('disableOuRow').style.display = this.checked ? 'block' : 'none';
+  });
+
+  /* ── Gerar Script ── */
+  document.getElementById('generateDisableBtn').addEventListener('click', function () {
+    const sam = hiddenEl.value.trim();
+    if (!sam) { showToast('Selecione um usuário primeiro.', '#f59e0b'); return; }
+
+    const displayName    = selectedUser ? (selectedUser.displayName || sam) : sam;
+    const reason         = document.getElementById('disableReason').value.trim();
+    const moveOu         = document.getElementById('disableMoveOu').checked;
+    const targetOu       = document.getElementById('disableOuSelect').value.trim();
+    const expirePassword = document.getElementById('disableExpirePassword').checked;
+
+    const script = generateDisableScript({ sam, displayName, reason, moveOu, targetOu, expirePassword });
+
+    const scriptCodeEl = document.getElementById('disableScriptCode');
+    const scriptOutEl  = document.getElementById('disableScriptOutput');
+    const emptyEl      = document.getElementById('disableEmptyState');
+    const actionsEl    = document.getElementById('disableOutputActions');
+    const summaryEl    = document.getElementById('disableSummary');
+    const summaryGrid  = document.getElementById('disableSummaryGrid');
+
+    scriptCodeEl.innerHTML = highlight(script);
+    scriptOutEl.style.display  = 'block';
+    emptyEl.style.display      = 'none';
+    actionsEl.style.display    = 'flex';
+
+    // Summary
+    summaryGrid.innerHTML = [
+      { k: 'Usuário (SAM)',    v: sam },
+      { k: 'Nome Completo',   v: displayName },
+      { k: 'Expirar Senha',   v: expirePassword ? 'Sim' : 'Não' },
+      { k: 'Mover para OU',   v: (moveOu && targetOu) ? targetOu : 'Não' },
+      ...(reason ? [{ k: 'Motivo', v: reason }] : []),
+    ].map(i => `
+      <div class="summary-item">
+        <div class="s-key">${i.k}</div>
+        <div class="s-val">${i.v}</div>
+      </div>
+    `).join('');
+    summaryEl.style.display = 'block';
+
+    // Armazena script para os botões
+    document.getElementById('copyDisableScriptBtn')._script = script;
+    document.getElementById('downloadDisableBtn')._script   = script;
+    document.getElementById('downloadDisableBtn')._filename = `desabilitar_${sam}.ps1`;
+    document.getElementById('executeDisableBtn')._script    = script;
+
+    showToast('Script de desabilitação gerado! ✓');
+  });
+
+  document.getElementById('copyDisableScriptBtn').addEventListener('click', function () {
+    if (this._script) copyText(this._script);
+  });
+  document.getElementById('downloadDisableBtn').addEventListener('click', function () {
+    if (this._script) downloadPS1(this._script, this._filename || 'desabilitar_usuario.ps1');
+  });
+
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   SERVIDOR LOCAL — Integração com a aba Desabilitar
+   Reutiliza o mesmo servidor Start-Server.ps1
+═══════════════════════════════════════════════════════════════ */
+(function () {
+  const SERVER_PORT = 7510;
+  const SERVER_BASE = `http://localhost:${SERVER_PORT}`;
+
+  const execBtn       = document.getElementById('executeDisableBtn');
+  const terminalPanel = document.getElementById('disableTerminalPanel');
+  const terminalOut   = document.getElementById('disableTerminalOutput');
+  const terminalSt    = document.getElementById('disableTerminalStatus');
+
+  // Verifica servidor e mostra/oculta botão Executar (compartilhado com o ping da aba principal)
+  async function checkAndToggle() {
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 1800);
+      const res   = await fetch(`${SERVER_BASE}/api/ping`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      if (execBtn) {
+        execBtn.style.display = 'flex';
+        execBtn.title = `Executar via servidor local (${data.user || 'localhost'})`;
+      }
+      return data.token;
+    } catch {
+      if (execBtn) execBtn.style.display = 'none';
+      return null;
+    }
+  }
+
+  function setStatus(type, text) {
+    if (!terminalSt) return;
+    terminalSt.textContent = text;
+    terminalSt.className = `terminal-status-badge terminal-st-${type}`;
+  }
+
+  function addLine(text, hint) {
+    const div = document.createElement('div');
+    div.className = 'tline';
+    const lower = (text || '').toLowerCase();
+    if (hint === 'error' || text.includes('❌') || lower.includes('falha') || lower.includes('error'))
+      div.classList.add('tl-error');
+    else if (text.includes('✅') || lower.includes('sucesso') || lower.includes('desabilitado'))
+      div.classList.add('tl-success');
+    else if (text.includes('⚠') || lower.includes('warning'))
+      div.classList.add('tl-warn');
+    else if (text.includes('🔑') || text.includes('📂') || text.includes('📝') || hint === 'info')
+      div.classList.add('tl-info');
+    div.textContent = text || '\u00a0';
+    terminalOut.appendChild(div);
+    terminalOut.scrollTop = terminalOut.scrollHeight;
+  }
+
+  if (execBtn) {
+    execBtn.addEventListener('click', async () => {
+      const script = execBtn._script;
+      if (!script) { showToast('Gere o script primeiro.', '#f59e0b'); return; }
+
+      const token = await checkAndToggle();
+      if (!token) { showToast('Servidor offline. Execute Start-Server.ps1.', '#f59e0b'); return; }
+
+      terminalPanel.style.display = 'block';
+      terminalOut.innerHTML = '';
+      setStatus('running', '⏳ Executando...');
+      addLine('⚡ Enviando script ao servidor local...', 'info');
+      terminalPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      try {
+        const ctrl  = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 315000);
+        const res = await fetch(`${SERVER_BASE}/api/run`, {
+          method : 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Server-Token': token },
+          body   : JSON.stringify({ script }),
+          signal : ctrl.signal,
+        });
+        clearTimeout(timer);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `Erro HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        terminalOut.innerHTML = '';
+        for (const line of (data.lines || [])) {
+          addLine(line);
+          await new Promise(r => setTimeout(r, 20));
+        }
+        if (data.success) {
+          setStatus('success', '✅ Concluído');
+          showToast('Conta desabilitada com sucesso! ✓');
+        } else {
+          setStatus('error', `❌ Falhou (código ${data.exitCode})`);
+          showToast('Falhou — veja o terminal.', '#ef4444');
+        }
+      } catch (err) {
+        addLine(`❌ ${err.message}`, 'error');
+        setStatus('error', 'Erro de comunicação');
+        showToast('Erro ao comunicar com o servidor.', '#ef4444');
+      }
+    });
+  }
+
+  document.getElementById('disableTerminalClearBtn')?.addEventListener('click', () => {
+    terminalOut.innerHTML = '';
+    terminalPanel.style.display = 'none';
+  });
+
+  // Sincroniza estado do botão Executar com o ping periódico do servidor principal
+  checkAndToggle();
+  setInterval(checkAndToggle, 15000);
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   DESABILITAR — SUB-ABAS (Individual / Em Lote)
+═══════════════════════════════════════════════════════════════ */
+(function () {
+  const btnSingle = document.getElementById('disSubBtnSingle');
+  const btnBulk   = document.getElementById('disSubBtnBulk');
+  const panelSingle = document.getElementById('disSubPanelSingle');
+  const panelBulk   = document.getElementById('disSubPanelBulk');
+
+  if (!btnSingle || !btnBulk) return;
+
+  function showSub(name) {
+    if (name === 'single') {
+      btnSingle.classList.add('active');
+      btnBulk.classList.remove('active');
+      panelSingle.style.display = '';
+      panelBulk.style.display   = 'none';
+    } else {
+      btnBulk.classList.add('active');
+      btnSingle.classList.remove('active');
+      panelBulk.style.display   = '';
+      panelSingle.style.display = 'none';
+    }
+  }
+
+  btnSingle.addEventListener('click', () => showSub('single'));
+  btnBulk.addEventListener('click',   () => showSub('bulk'));
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   DESABILITAR EM LOTE — Script Generator
+═══════════════════════════════════════════════════════════════ */
+
+/**
+ * Gera script PowerShell para desabilitar múltiplas contas em lote.
+ * @param {Array}  users         - [{sam, displayName}, ...]
+ * @param {string} reason        - motivo global (opcional)
+ * @param {boolean} moveOu       - mover para OU de desabilitados
+ * @param {string} targetOu      - OU de destino (se moveOu=true)
+ * @param {boolean} expirePassword - expirar senha
+ */
+function generateBulkDisableScript(users, reason, moveOu, targetOu, expirePassword) {
+  const timestamp = new Date().toLocaleString('pt-BR');
+
+  const lines = [
+    `# ================================================================`,
+    `# Script de Desabilitação em LOTE no Active Directory`,
+    `# Gerado em: ${timestamp}`,
+    `# Total de contas: ${users.length}`,
+    ...(reason ? [`# Motivo  : ${reason}`] : []),
+    `# ================================================================`,
+    ``,
+    `Import-Module ActiveDirectory -ErrorAction Stop`,
+    ``,
+    `# ── Lista de usuários ───────────────────────────────────────────`,
+    `$Usuarios = @(`,
+    ...users.map((u, i) => {
+      const comma = i < users.length - 1 ? ',' : '';
+      return `    "${u.sam}"${comma}    # ${u.displayName || u.sam}`;
+    }),
+    `)`,
+    ``,
+    ...(reason ? [`$Motivo = "${reason}"`] : []),
+    ...(moveOu && targetOu ? [`$TargetOU = "${targetOu}"`] : []),
+    ``,
+    `# ── Processar cada usuário ──────────────────────────────────────`,
+    `$Sucesso = 0`,
+    `$Falha   = 0`,
+    ``,
+    `foreach ($Sam in $Usuarios) {`,
+    `    Write-Host ""`,
+    `    Write-Host "▶ Processando: $Sam" -ForegroundColor Cyan`,
+    `    try {`,
+    `        $User = Get-ADUser -Identity $Sam -ErrorAction Stop`,
+    ``,
+    `        # Desabilitar conta`,
+    `        Disable-ADAccount -Identity $Sam -ErrorAction Stop`,
+    `        Write-Host "  ✅ Conta desabilitada." -ForegroundColor Green`,
+  ];
+
+  if (expirePassword) {
+    lines.push(
+      ``,
+      `        # Expirar senha`,
+      `        Set-ADUser -Identity $Sam -PasswordNeverExpires $false -ErrorAction SilentlyContinue`,
+      `        Set-ADUser -Identity $Sam -ChangePasswordAtLogon $true -ErrorAction SilentlyContinue`,
+      `        Write-Host "  🔑 Senha expirada." -ForegroundColor Cyan`,
+    );
+  }
+
+  if (moveOu && targetOu) {
+    lines.push(
+      ``,
+      `        # Mover para OU de desabilitados`,
+      `        Move-ADObject -Identity $User.DistinguishedName -TargetPath $TargetOU -ErrorAction Stop`,
+      `        Write-Host "  📂 Movido para: $TargetOU" -ForegroundColor Cyan`,
+    );
+  }
+
+  if (reason) {
+    lines.push(
+      ``,
+      `        # Registrar motivo na descrição`,
+      `        $DataHoje = (Get-Date).ToString("dd/MM/yyyy")`,
+      `        Set-ADUser -Identity $Sam -Description "DESABILITADO em $DataHoje - $Motivo" -ErrorAction SilentlyContinue`,
+      `        Write-Host "  📝 Motivo registrado." -ForegroundColor Cyan`,
+    );
+  }
+
+  lines.push(
+    ``,
+    `        $Sucesso++`,
+    `    } catch {`,
+    `        Write-Warning "  ❌ Falha em '$Sam': $_"`,
+    `        $Falha++`,
+    `    }`,
+    `}`,
+    ``,
+    `# ── Resumo final ────────────────────────────────────────────────`,
+    `Write-Host ""`,
+    `Write-Host "═══════════════════════════════════" -ForegroundColor DarkGray`,
+    `Write-Host "✅ Concluídos com sucesso : $Sucesso" -ForegroundColor Green`,
+    `if ($Falha -gt 0) {`,
+    `    Write-Host "❌ Com falha             : $Falha" -ForegroundColor Red`,
+    `}`,
+    `Write-Host "═══════════════════════════════════" -ForegroundColor DarkGray`,
+  );
+
+  return lines.join('\n');
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   DESABILITAR EM LOTE — UI: busca + lista + gerar script
+═══════════════════════════════════════════════════════════════ */
+(function () {
+  const searchEl    = document.getElementById('disableBulkSearch');
+  const clearEl     = document.getElementById('clearDisableBulkSearch');
+  const dropEl      = document.getElementById('disableBulkDropdown');
+  const listWrap    = document.getElementById('disableBulkListWrap');
+  const listEl      = document.getElementById('disableBulkList');
+  const listLabel   = document.getElementById('disableBulkListLabel');
+  const clearAllEl  = document.getElementById('disableBulkClearAll');
+  const countBadge  = document.getElementById('disableBulkCount');
+  const genBtn      = document.getElementById('generateBulkDisableBtn');
+
+  if (!searchEl) return;
+
+  // Conjunto de usuários adicionados: Map<sam → userObj>
+  const queueMap = new Map();
+
+  function getUsers() {
+    return (window.AD_DATA && window.AD_DATA.users) ? window.AD_DATA.users : [];
+  }
+
+  function getInitials(name) {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  function hlText(text, term) {
+    if (!term) return text;
+    const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return text.replace(new RegExp(`(${esc})`, 'gi'), '<mark>$1</mark>');
+  }
+
+  function filterUsers(term) {
+    const t = term.toLowerCase();
+    return getUsers().filter(u =>
+      (u.samAccountName && u.samAccountName.toLowerCase().includes(t)) ||
+      (u.displayName    && u.displayName.toLowerCase().includes(t))    ||
+      (u.department     && u.department.toLowerCase().includes(t))
+    ).slice(0, 12);
+  }
+
+  /* ── Renderiza dropdown de busca ── */
+  function renderDrop(results, term) {
+    dropEl.innerHTML = '';
+    if (!results.length) {
+      dropEl.innerHTML = `
+        <div class="user-dropdown-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          Nenhum usuário encontrado
+        </div>`;
+      dropEl.style.display = 'block';
+      return;
+    }
+    results.forEach(u => {
+      const sam = u.samAccountName;
+      const alreadyAdded = queueMap.has(sam);
+      const isDisabled   = u.enabled === false;
+
+      const item = document.createElement('div');
+      item.className = 'user-dropdown-item';
+      if (alreadyAdded) item.style.opacity = '.45';
+
+      const initials = getInitials(u.displayName || sam);
+      item.innerHTML = `
+        <div class="user-dropdown-avatar" style="${isDisabled ? 'background:linear-gradient(135deg,#6b7280,#9ca3af)' : ''}">${initials}</div>
+        <div class="user-dropdown-info">
+          <div class="user-dropdown-name">
+            ${hlText(u.displayName || sam, term)}
+            ${isDisabled  ? '<span style="font-size:10px;background:#ef444420;color:#ef4444;border:1px solid #ef444430;border-radius:99px;padding:1px 7px;margin-left:6px;">Já desabilitado</span>' : ''}
+            ${alreadyAdded ? '<span style="font-size:10px;background:#10b98118;color:#10b981;border:1px solid #10b98130;border-radius:99px;padding:1px 7px;margin-left:6px;">Na lista</span>' : ''}
+          </div>
+          <div class="user-dropdown-meta">
+            <span class="user-dropdown-sam">${hlText(sam, term)}</span>
+            ${u.department ? `<span class="user-dropdown-dept">${u.department}</span>` : ''}
+          </div>
+        </div>`;
+      item.addEventListener('mousedown', e => {
+        e.preventDefault();
+        if (!alreadyAdded) addToQueue(u);
+        else showToast(`${sam} já está na lista.`, '#f59e0b');
+        searchEl.value = '';
+        clearEl.style.display = 'none';
+        dropEl.style.display  = 'none';
+      });
+      dropEl.appendChild(item);
+    });
+    dropEl.style.display = 'block';
+  }
+
+  /* ── Adiciona usuário à fila ── */
+  function addToQueue(u) {
+    const sam = u.samAccountName;
+    if (queueMap.has(sam)) return;
+    queueMap.set(sam, u);
+    renderList();
+    updateCounters();
+    showToast(`${u.displayName || sam} adicionado! ✓`);
+  }
+
+  /* ── Remove usuário da fila ── */
+  function removeFromQueue(sam) {
+    queueMap.delete(sam);
+    renderList();
+    updateCounters();
+  }
+
+  /* ── Atualiza contadores e estado do botão ── */
+  function updateCounters() {
+    const n = queueMap.size;
+    listLabel.textContent  = `${n} usuário${n !== 1 ? 's' : ''} na fila`;
+    countBadge.textContent = n;
+    countBadge.style.display = n > 0 ? 'inline-flex' : 'none';
+    genBtn.disabled = n === 0;
+    listWrap.style.display = n > 0 ? '' : 'none';
+  }
+
+  /* ── Renderiza itens da lista ── */
+  function renderList() {
+    listEl.innerHTML = '';
+    queueMap.forEach((u, sam) => {
+      const isDisabled = u.enabled === false;
+      const initials   = getInitials(u.displayName || sam);
+
+      const item = document.createElement('div');
+      item.className = 'disable-bulk-item';
+      item.innerHTML = `
+        <div class="disable-bulk-item-avatar">${initials}</div>
+        <div class="disable-bulk-item-info">
+          <div class="disable-bulk-item-name">${u.displayName || sam}</div>
+          <div class="disable-bulk-item-sam">${sam}${u.department ? ' · ' + u.department : ''}</div>
+        </div>
+        <span class="disable-bulk-item-status ${isDisabled ? 'disable-status-disabled' : 'disable-status-enabled'}">
+          ${isDisabled ? '● Já desabilitado' : '● Ativa'}
+        </span>
+        <button class="disable-bulk-item-remove" title="Remover da lista">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>`;
+      item.querySelector('.disable-bulk-item-remove').addEventListener('click', () => removeFromQueue(sam));
+      listEl.appendChild(item);
+    });
+  }
+
+  /* ── Eventos de busca ── */
+  let debounce;
+  searchEl.addEventListener('input', function () {
+    const term = this.value.trim();
+    clearEl.style.display = term ? 'flex' : 'none';
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      if (term.length < 2) { dropEl.style.display = 'none'; return; }
+      const users = getUsers();
+      if (!users.length) {
+        // Sem AD: permite digitar SAM manualmente e adicionar
+        dropEl.innerHTML = `
+          <div class="user-dropdown-manual" style="cursor:pointer;" id="bulkManualAdd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            AD não conectado — clique para adicionar <strong>${term}</strong> como SAM
+          </div>`;
+        const el = document.getElementById('bulkManualAdd');
+        if (el) el.addEventListener('mousedown', e => {
+          e.preventDefault();
+          addToQueue({ samAccountName: term, displayName: term, enabled: true });
+          searchEl.value = '';
+          clearEl.style.display = 'none';
+          dropEl.style.display  = 'none';
+        });
+        dropEl.style.display = 'block';
+        return;
+      }
+      renderDrop(filterUsers(term), term);
+    }, 200);
+  });
+
+  searchEl.addEventListener('focus', function () {
+    const term = this.value.trim();
+    if (term.length >= 2) renderDrop(filterUsers(term), term);
+  });
+  searchEl.addEventListener('blur', () => setTimeout(() => { dropEl.style.display = 'none'; }, 150));
+
+  searchEl.addEventListener('keydown', function (e) {
+    const items  = dropEl.querySelectorAll('.user-dropdown-item');
+    const active = dropEl.querySelector('.user-dropdown-item.focused');
+    if (e.key === 'Escape') { dropEl.style.display = 'none'; return; }
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = active ? active.nextElementSibling : items[0];
+      active?.classList.remove('focused');
+      if (next?.classList.contains('user-dropdown-item')) next.classList.add('focused');
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = active?.previousElementSibling;
+      active?.classList.remove('focused');
+      if (prev?.classList.contains('user-dropdown-item')) prev.classList.add('focused');
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (active) {
+        const idx = [...items].indexOf(active);
+        const results = filterUsers(searchEl.value.trim());
+        if (results[idx] && !queueMap.has(results[idx].samAccountName))
+          addToQueue(results[idx]);
+      }
+    }
+  });
+
+  clearEl.addEventListener('click', () => {
+    searchEl.value = '';
+    clearEl.style.display = 'none';
+    dropEl.style.display  = 'none';
+  });
+
+  clearAllEl.addEventListener('click', () => {
+    if (!queueMap.size) return;
+    if (confirm(`Remover todos os ${queueMap.size} usuários da lista?`)) {
+      queueMap.clear();
+      renderList();
+      updateCounters();
+    }
+  });
+
+  /* ── Toggle OU row ── */
+  document.getElementById('disableBulkMoveOu').addEventListener('change', function () {
+    document.getElementById('disableBulkOuRow').style.display = this.checked ? 'block' : 'none';
+  });
+
+  /* ── Gerar script em lote ── */
+  genBtn.addEventListener('click', () => {
+    if (!queueMap.size) { showToast('Adicione pelo menos um usuário.', '#f59e0b'); return; }
+
+    const users        = [...queueMap.values()].map(u => ({ sam: u.samAccountName, displayName: u.displayName }));
+    const reason       = document.getElementById('disableBulkReason').value.trim();
+    const moveOu       = document.getElementById('disableBulkMoveOu').checked;
+    const targetOu     = document.getElementById('disableBulkOuSelect').value.trim();
+    const expirePw     = document.getElementById('disableBulkExpire').checked;
+
+    const script = generateBulkDisableScript(users, reason, moveOu, targetOu, expirePw);
+
+    const codeEl     = document.getElementById('disableBulkScriptCode');
+    const outputEl   = document.getElementById('disableBulkScriptOutput');
+    const emptyEl    = document.getElementById('disableBulkEmptyState');
+    const actionsEl  = document.getElementById('disableBulkOutputActions');
+    const summaryEl  = document.getElementById('disableBulkSummary');
+    const summaryGrid= document.getElementById('disableBulkSummaryGrid');
+
+    codeEl.innerHTML         = highlight(script);
+    outputEl.style.display   = 'block';
+    emptyEl.style.display    = 'none';
+    actionsEl.style.display  = 'flex';
+
+    // Summary
+    summaryGrid.innerHTML = [
+      { k: 'Total de contas',  v: `${users.length} usuários` },
+      { k: 'Expirar Senha',    v: expirePw ? 'Sim' : 'Não' },
+      { k: 'Mover para OU',    v: (moveOu && targetOu) ? targetOu : 'Não' },
+      ...(reason ? [{ k: 'Motivo Global', v: reason }] : []),
+      { k: 'Usuários', v: users.map(u => u.sam).join(', ') },
+    ].map(i => `
+      <div class="summary-item">
+        <div class="s-key">${i.k}</div>
+        <div class="s-val" style="word-break:break-all">${i.v}</div>
+      </div>`).join('');
+    summaryEl.style.display = 'block';
+
+    document.getElementById('copyDisableBulkBtn')._script    = script;
+    document.getElementById('downloadDisableBulkBtn')._script = script;
+    document.getElementById('downloadDisableBulkBtn')._filename = `desabilitar_lote_${users.length}usuarios.ps1`;
+    document.getElementById('executeDisableBulkBtn')._script  = script;
+
+    showToast(`Script gerado para ${users.length} usuário(s)! ✓`);
+  });
+
+  document.getElementById('copyDisableBulkBtn').addEventListener('click', function () {
+    if (this._script) copyText(this._script);
+  });
+  document.getElementById('downloadDisableBulkBtn').addEventListener('click', function () {
+    if (this._script) downloadPS1(this._script, this._filename || 'desabilitar_lote.ps1');
+  });
+
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   SERVIDOR LOCAL — Integração Em Lote (Desabilitar)
+═══════════════════════════════════════════════════════════════ */
+(function () {
+  const SERVER_PORT = 7510;
+  const SERVER_BASE = `http://localhost:${SERVER_PORT}`;
+
+  const execBtn     = document.getElementById('executeDisableBulkBtn');
+  const termPanel   = document.getElementById('disableBulkTerminalPanel');
+  const termOut     = document.getElementById('disableBulkTerminalOutput');
+  const termSt      = document.getElementById('disableBulkTerminalStatus');
+
+  async function getToken() {
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 1800);
+      const res   = await fetch(`${SERVER_BASE}/api/ping`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      if (execBtn) {
+        execBtn.style.display = 'flex';
+        execBtn.title = `Executar via servidor local (${data.user || 'localhost'})`;
+      }
+      return data.token;
+    } catch {
+      if (execBtn) execBtn.style.display = 'none';
+      return null;
+    }
+  }
+
+  function setStatus(type, text) {
+    if (!termSt) return;
+    termSt.textContent = text;
+    termSt.className = `terminal-status-badge terminal-st-${type}`;
+  }
+
+  function addLine(text, hint) {
+    const div = document.createElement('div');
+    div.className = 'tline';
+    const lower = (text || '').toLowerCase();
+    if (hint === 'error' || text.includes('❌') || lower.includes('falha'))
+      div.classList.add('tl-error');
+    else if (text.includes('✅') || lower.includes('sucesso') || lower.includes('desabilitado'))
+      div.classList.add('tl-success');
+    else if (text.includes('⚠') || lower.includes('warning'))
+      div.classList.add('tl-warn');
+    else if (text.includes('🔑') || text.includes('📂') || text.includes('📝') || text.includes('▶') || hint === 'info')
+      div.classList.add('tl-info');
+    div.textContent = text || '\u00a0';
+    termOut.appendChild(div);
+    termOut.scrollTop = termOut.scrollHeight;
+  }
+
+  if (execBtn) {
+    execBtn.addEventListener('click', async () => {
+      const script = execBtn._script;
+      if (!script) { showToast('Gere o script primeiro.', '#f59e0b'); return; }
+      const token = await getToken();
+      if (!token) { showToast('Servidor offline. Execute Start-Server.ps1.', '#f59e0b'); return; }
+
+      termPanel.style.display = 'block';
+      termOut.innerHTML = '';
+      setStatus('running', '⏳ Executando...');
+      addLine('⚡ Enviando script ao servidor local...', 'info');
+      termPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      try {
+        const ctrl  = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 315000);
+        const res = await fetch(`${SERVER_BASE}/api/run`, {
+          method : 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Server-Token': token },
+          body   : JSON.stringify({ script }),
+          signal : ctrl.signal,
+        });
+        clearTimeout(timer);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `Erro HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        termOut.innerHTML = '';
+        for (const line of (data.lines || [])) {
+          addLine(line);
+          await new Promise(r => setTimeout(r, 20));
+        }
+        if (data.success) {
+          setStatus('success', '✅ Concluído');
+          showToast('Lote processado com sucesso! ✓');
+        } else {
+          setStatus('error', `❌ Falhou (código ${data.exitCode})`);
+          showToast('Falhou — veja o terminal.', '#ef4444');
+        }
+      } catch (err) {
+        addLine(`❌ ${err.message}`, 'error');
+        setStatus('error', 'Erro de comunicação');
+        showToast('Erro ao comunicar com o servidor.', '#ef4444');
+      }
+    });
+  }
+
+  document.getElementById('disableBulkTerminalClearBtn')?.addEventListener('click', () => {
+    termOut.innerHTML = '';
+    termPanel.style.display = 'none';
+  });
+
+  getToken();
+  setInterval(getToken, 15000);
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   DESABILITAR — OU PICKER (factory reutilizável)
+   Usado em: Individual (disableOu*) e Em Lote (disableBulkOu*)
+═══════════════════════════════════════════════════════════════ */
+function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, chipDnId, chipRemoveId, hiddenId }) {
+  const searchEl = document.getElementById(searchId);
+  const clearEl  = document.getElementById(clearId);
+  const dropEl   = document.getElementById(dropId);
+  const chipEl   = document.getElementById(chipId);
+  const chipName = document.getElementById(chipNameId);
+  const chipDn   = document.getElementById(chipDnId);
+  const chipRem  = document.getElementById(chipRemoveId);
+  const hiddenEl = document.getElementById(hiddenId);
+
+  if (!searchEl || !window.AD_DATA) return;
+
+  const ous = window.AD_DATA.ous || [];
+  if (!ous.length) return;
+
+  /** Retorna o caminho completo pai→filho como array de strings */
+  function ouPath(ou) {
+    return ou.distinguishedName
+      .split(',')
+      .filter(p => p.trim().toUpperCase().startsWith('OU='))
+      .map(p => p.trim().slice(3))
+      .reverse();
+  }
+
+  /** Ícone heurístico baseado no nome */
+  function ouIcon(name) {
+    const n = name.toLowerCase();
+    if (/\b(user|usu[aá]r|people|pessoa)\b/.test(n)) return '👥';
+    if (/\b(comp(ut)?|workst|pc|desktop|laptop)\b/.test(n)) return '💻';
+    if (/\b(server|serv(id)?|srv)\b/.test(n)) return '🖥️';
+    if (/\b(group|grupo|grp)\b/.test(n)) return '👪';
+    if (/\b(admin|adm|priv)\b/.test(n)) return '🔐';
+    if (/\b(print|impressora)\b/.test(n)) return '🖨️';
+    if (/\b(ti|it|suporte|support|help)\b/.test(n)) return '🛠️';
+    if (/\b(desat|disabled?|inativ)\b/.test(n)) return '🚫';
+    if (/\b(terceiro|extern)\b/.test(n)) return '🤝';
+    return '📁';
+  }
+
+  /** Lista ordenada: mais profundas primeiro, depois alfabética */
+  const sorted = [...ous].sort((a, b) => {
+    const da = a.distinguishedName.split(',').filter(p => p.toUpperCase().startsWith('OU=')).length;
+    const db = b.distinguishedName.split(',').filter(p => p.toUpperCase().startsWith('OU=')).length;
+    if (da !== db) return db - da;
+    return a.distinguishedName.localeCompare(b.distinguishedName, 'pt-BR');
+  });
+
+  function filterOus(term) {
+    if (!term) return sorted;
+    const t = term.toLowerCase();
+    return sorted.filter(ou =>
+      ou.name.toLowerCase().includes(t) ||
+      ou.distinguishedName.toLowerCase().includes(t) ||
+      ouPath(ou).join(' ').toLowerCase().includes(t)
+    );
+  }
+
+  function hl(text, term) {
+    if (!term) return text;
+    const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return text.replace(new RegExp(`(${esc})`, 'gi'), '<mark>$1</mark>');
+  }
+
+  function renderDrop(results, term) {
+    dropEl.innerHTML = '';
+    if (!results.length) {
+      dropEl.innerHTML = `<div class="bulk-ou-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        Nenhuma OU encontrada para "<strong>${term}</strong>"
+      </div>`;
+      dropEl.style.display = 'block';
+      return;
+    }
+
+    const slice = results.slice(0, 80);
+    slice.forEach((ou, idx) => {
+      const path      = ouPath(ou);
+      const leafName  = path[path.length - 1] || ou.name;
+      const parentStr = path.slice(0, -1).join(' › ');
+      const icon      = ouIcon(ou.name);
+
+      const item = document.createElement('div');
+      item.className = 'bulk-ou-drop-item';
+      item.dataset.idx = idx;
+      item.innerHTML = `
+        <span class="bulk-ou-drop-icon">${icon}</span>
+        <div class="bulk-ou-drop-info">
+          <div class="bulk-ou-drop-leaf">
+            ${hl(leafName, term)}
+            ${parentStr ? `<span class="bulk-ou-drop-parent"> › ${hl(parentStr, term)}</span>` : ''}
+          </div>
+          <div class="bulk-ou-drop-dn">${hl(ou.distinguishedName, term)}</div>
+        </div>`;
+      item.addEventListener('mousedown', e => { e.preventDefault(); select(ou); });
+      dropEl.appendChild(item);
+    });
+
+    if (results.length > 80) {
+      const more = document.createElement('div');
+      more.className = 'bulk-ou-drop-more';
+      more.textContent = `+ ${results.length - 80} resultados — refine a busca`;
+      dropEl.appendChild(more);
+    }
+    dropEl.style.display = 'block';
+  }
+
+  function select(ou) {
+    const path = ouPath(ou);
+    hiddenEl.value    = ou.distinguishedName;
+    chipName.textContent = path.join(' › ');
+    chipDn.textContent   = ou.distinguishedName;
+    chipEl.querySelector('.bulk-ou-chip-icon').textContent = ouIcon(ou.name);
+    chipEl.style.display = 'flex';
+    searchEl.value = '';
+    clearEl.style.display = 'none';
+    dropEl.style.display  = 'none';
+  }
+
+  function clear() {
+    hiddenEl.value = '';
+    chipEl.style.display  = 'none';
+    searchEl.value        = '';
+    clearEl.style.display = 'none';
+    dropEl.style.display  = 'none';
+  }
+
+  let debounce;
+  searchEl.addEventListener('input', function () {
+    clearEl.style.display = this.value ? 'flex' : 'none';
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      const term = this.value.trim();
+      if (!term) { dropEl.style.display = 'none'; return; }
+      renderDrop(filterOus(term), term);
+    }, 160);
+  });
+
+  searchEl.addEventListener('focus', function () {
+    const term = this.value.trim();
+    if (term) renderDrop(filterOus(term), term);
+    else if (!hiddenEl.value) renderDrop(sorted.slice(0, 50), '');
+  });
+
+  searchEl.addEventListener('blur', () => setTimeout(() => { dropEl.style.display = 'none'; }, 160));
+
+  searchEl.addEventListener('keydown', function (e) {
+    const items  = dropEl.querySelectorAll('.bulk-ou-drop-item');
+    const active = dropEl.querySelector('.bulk-ou-drop-item.focused');
+    if (e.key === 'Escape') { dropEl.style.display = 'none'; return; }
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = active ? active.nextElementSibling : items[0];
+      active?.classList.remove('focused');
+      if (next?.classList.contains('bulk-ou-drop-item')) next.classList.add('focused');
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = active?.previousElementSibling;
+      active?.classList.remove('focused');
+      if (prev?.classList.contains('bulk-ou-drop-item')) prev.classList.add('focused');
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (active) {
+        const idx = +active.dataset.idx;
+        const term = searchEl.value.trim();
+        const results = filterOus(term);
+        if (results[idx]) select(results[idx]);
+      }
+    }
+  });
+
+  clearEl.addEventListener('click', clear);
+  chipRem.addEventListener('click', clear);
+}
+
+/* ── Inicializar os dois pickers de OU nos painéis de Desabilitar ── */
+/* Aguarda AD_DATA estar disponível (pode já estar, ou ser injetado pelo ad-data.js) */
+(function () {
+  function tryInit() {
+    if (!window.AD_DATA || !window.AD_DATA.ous || !window.AD_DATA.ous.length) return;
+
+    initDisableOuPicker({
+      searchId:    'disableOuSearch',
+      clearId:     'disableOuClear',
+      dropId:      'disableOuDrop',
+      chipId:      'disableOuChip',
+      chipNameId:  'disableOuChipName',
+      chipDnId:    'disableOuChipDn',
+      chipRemoveId:'disableOuChipRemove',
+      hiddenId:    'disableOuSelect',
+    });
+
+    initDisableOuPicker({
+      searchId:    'disableBulkOuSearch',
+      clearId:     'disableBulkOuClear',
+      dropId:      'disableBulkOuDrop',
+      chipId:      'disableBulkOuChip',
+      chipNameId:  'disableBulkOuChipName',
+      chipDnId:    'disableBulkOuChipDn',
+      chipRemoveId:'disableBulkOuChipRemove',
+      hiddenId:    'disableBulkOuSelect',
+    });
+  }
+
+  // Tenta imediatamente (ad-data.js já pode ter sido carregado antes deste script)
+  tryInit();
+
+  // Caso contrário, aguarda o evento DOMContentLoaded e tenta novamente
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', tryInit);
+  }
+
+  // Fallback com polling (caso ad-data.js carregue de forma assíncrona)
+  let attempts = 0;
+  const interval = setInterval(() => {
+    if (window.AD_DATA?.ous?.length || ++attempts > 30) {
+      clearInterval(interval);
+      tryInit();
+    }
+  }, 300);
 })();
