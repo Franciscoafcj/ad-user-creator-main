@@ -1626,17 +1626,23 @@ function initUserSearch({
   }
 
   function hlText(text, term) {
-    if (!term) return text;
-    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return text.replace(new RegExp(`(${escaped})`, 'gi'), '<mark>$1</mark>');
+    if (!term || !text) return text;
+    const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const tNorm = normalize(term);
+    const txtNorm = normalize(text);
+    const idx = txtNorm.indexOf(tNorm);
+    if (idx === -1) return text;
+    return text.substring(0, idx) + '<mark>' + text.substring(idx, idx + term.length) + '</mark>' + text.substring(idx + term.length);
   }
 
   function filterUsers(term) {
-    const t = term.toLowerCase();
+    const normalize = s => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
+    const t = normalize(term);
     return getUsers().filter(u =>
-      (u.samAccountName && u.samAccountName.toLowerCase().includes(t)) ||
-      (u.displayName    && u.displayName.toLowerCase().includes(t))    ||
-      (u.department     && u.department.toLowerCase().includes(t))
+      normalize(u.samAccountName).includes(t) ||
+      normalize(u.displayName).includes(t)    ||
+      normalize(u.name).includes(t)           ||
+      normalize(u.department).includes(t)
     ).slice(0, 10);
   }
 
@@ -2108,17 +2114,23 @@ function generateDisableScript({ sam, displayName, reason, moveOu, targetOu, exp
   }
 
   function hlText(text, term) {
-    if (!term) return text;
-    const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return text.replace(new RegExp(`(${esc})`, 'gi'), '<mark>$1</mark>');
+    if (!term || !text) return text;
+    const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const tNorm = normalize(term);
+    const txtNorm = normalize(text);
+    const idx = txtNorm.indexOf(tNorm);
+    if (idx === -1) return text;
+    return text.substring(0, idx) + '<mark>' + text.substring(idx, idx + term.length) + '</mark>' + text.substring(idx + term.length);
   }
 
   function filterUsers(term) {
-    const t = term.toLowerCase();
+    const normalize = s => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
+    const t = normalize(term);
     return getUsers().filter(u =>
-      (u.samAccountName && u.samAccountName.toLowerCase().includes(t)) ||
-      (u.displayName    && u.displayName.toLowerCase().includes(t))    ||
-      (u.department     && u.department.toLowerCase().includes(t))
+      normalize(u.samAccountName).includes(t) ||
+      normalize(u.displayName).includes(t)    ||
+      normalize(u.name).includes(t)           ||
+      normalize(u.department).includes(t)
     ).slice(0, 12);
   }
 

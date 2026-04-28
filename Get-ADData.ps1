@@ -105,10 +105,10 @@ try {
 Write-Host "[ 4/4 ] Coletando usuários do domínio..." -NoNewline
 try {
     $allUsers = Get-ADUser -Filter * `
-                    -Properties DisplayName, SamAccountName, UserPrincipalName, EmailAddress, Title, Department, Enabled `
+                    -Properties Name, DisplayName, SamAccountName, UserPrincipalName, EmailAddress, Title, Department, Enabled `
                     -ErrorAction Stop |
-                Sort-Object DisplayName |
-                Select-Object SamAccountName, UserPrincipalName, EmailAddress, DisplayName, Title, Department, Enabled
+                Sort-Object Name |
+                Select-Object Name, SamAccountName, UserPrincipalName, EmailAddress, DisplayName, Title, Department, Enabled
 
     Write-Host " OK ($($allUsers.Count) usuários encontrados)" -ForegroundColor Green
 } catch {
@@ -130,10 +130,11 @@ $ouList = $allOUs | ForEach-Object {
 
 $userList = $allUsers | ForEach-Object {
     [PSCustomObject]@{
+        name               = $_.Name
         samAccountName     = $_.SamAccountName
         userPrincipalName  = if ($_.UserPrincipalName) { $_.UserPrincipalName } else { '' }
         emailAddress       = if ($_.EmailAddress)      { $_.EmailAddress }      else { '' }
-        displayName        = if ($_.DisplayName)       { $_.DisplayName }       else { $_.SamAccountName }
+        displayName        = if ($_.DisplayName)       { $_.DisplayName }       elseif ($_.Name) { $_.Name } else { $_.SamAccountName }
         title              = if ($_.Title)              { $_.Title }             else { '' }
         department         = if ($_.Department)         { $_.Department }        else { '' }
         enabled            = if ($_.Enabled -eq $true)  { $true }                else { $false }

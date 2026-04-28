@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Servidor HTTP local — AD User Creator
     Permite executar scripts de criação de usuários AD diretamente do navegador.
