@@ -105,10 +105,9 @@ try {
 Write-Host "[ 4/4 ] Coletando usuários do domínio..." -NoNewline
 try {
     $allUsers = Get-ADUser -Filter * `
-                    -Properties Name, DisplayName, SamAccountName, UserPrincipalName, EmailAddress, Title, Department, Enabled `
+                    -Properties Name, DisplayName, SamAccountName, UserPrincipalName, EmailAddress, Title, Department, Enabled, DistinguishedName, MemberOf `
                     -ErrorAction Stop |
-                Sort-Object Name |
-                Select-Object Name, SamAccountName, UserPrincipalName, EmailAddress, DisplayName, Title, Department, Enabled
+                Sort-Object Name
 
     Write-Host " OK ($($allUsers.Count) usuários encontrados)" -ForegroundColor Green
 } catch {
@@ -129,6 +128,17 @@ $ouList = $allOUs | ForEach-Object {
 }
 
 $userList = $allUsers | ForEach-Object {
+    # Extrai a OU do DistinguishedName do usuário (remove o primeiro CN= e pega o restante)
+    $userDn  = $_.DistinguishedName
+    $userOu  = if ($userDn -match ',(.+)$') { $Matches[1] } else { '' }
+
+    # Extrai apenas o nome de cada grupo (CN=) de MemberOf, excluindo Domain Users
+    $grupos = if ($_.MemberOf) {
+        @($_.MemberOf | ForEach-Object {
+            if ($_ -match '^CN=([^,]+)') { $Matches[1] }
+        } | Where-Object { $_ -and $_ -ne 'Domain Users' })
+    } else { @() }
+
     [PSCustomObject]@{
         name               = $_.Name
         samAccountName     = $_.SamAccountName
@@ -138,6 +148,9 @@ $userList = $allUsers | ForEach-Object {
         title              = if ($_.Title)              { $_.Title }             else { '' }
         department         = if ($_.Department)         { $_.Department }        else { '' }
         enabled            = if ($_.Enabled -eq $true)  { $true }                else { $false }
+        distinguishedName  = $userDn
+        ou                 = $userOu
+        groups             = $grupos
     }
 }
 

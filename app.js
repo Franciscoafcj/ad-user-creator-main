@@ -293,11 +293,12 @@ function generateBulkScript(users, domain, templateUser) {
   const userLines = users.map((u, i) => {
     const comma = i < users.length - 1 ? ',' : '';
     const lastNameField = u.surnames || u.lastName;
+    const fullNameField = u.fullName || `${u.firstName} ${lastNameField}`;
     return [
       `    @{`,
       `        FirstName   = "${u.firstName}"`,
       `        LastName    = "${lastNameField}"`,
-      `        FullName    = "${u.firstName} ${lastNameField}"`,
+      `        FullName    = "${fullNameField}"`,
       `        Sam         = "${u.sam}"`,
       `        Email       = "${u.email}"`,
       `        CPF         = "${u.cpf11}"`,
@@ -722,7 +723,116 @@ document.getElementById('downloadBtn').addEventListener('click', function () {
   if (this._script) downloadPS1(this._script, this._filename || 'criar_usuario_ad.ps1');
 });
 
-/* ---------- CSV Bulk ---------- */
+/* ---------- Smart Import (texto livre → CSV) ---------- */
+
+/**
+ * Parseia um bloco de texto livre no formato:
+ *   Nome: NOME COMPLETO
+ *   CPF: 000.000.000-00
+ *   (qualquer outro campo é ignorado)
+ *   ___ ou linha em branco entre registros
+ *
+ * Retorna array de { name, cpf } (cpf pode ser '' se ausente no bloco).
+ */
+function parseSmartImportText(text) {
+  const records = [];
+
+  // Divide por separadores (linhas de underscores, hifens, asteriscos, ou múltiplas linhas em branco)
+  const blocks = text.split(/(?:_{3,}|-{3,}|\*{3,}|={3,}|\n\s*\n\s*\n)/g);
+
+  blocks.forEach(block => {
+    const nameMatch = block.match(/^[ \t]*Nome\s*:\s*(.+)/im);
+    const cpfMatch  = block.match(/^[ \t]*CPF\s*:\s*(.+)/im);
+
+    const name = nameMatch ? nameMatch[1].trim() : '';
+    const cpf  = cpfMatch  ? cpfMatch[1].trim()  : '';
+
+    // Capitaliza o nome (que pode vir em MAIÚSCULAS)
+    const nameFmt = formatName(name);
+
+    if (nameFmt) {
+      records.push({ name: nameFmt, cpf });
+    }
+  });
+
+  return records;
+}
+
+/**
+ * Gera senha individual: 3 letras do primeiro nome (capitalizadas) + "@" + 4 dígitos aleatórios.
+ * Exemplo: "Francisco" → "Fra@5678" | "Haley" → "Hal@2391"
+ */
+function generateSmartPassword(firstName) {
+  const letters = firstName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')  // remove diacríticos
+    .replace(/[^a-zA-Z]/g, '')        // só letras
+    .slice(0, 3);
+
+  // Capitaliza: 1ª maiúscula, demais minúsculas; pad com 'x' se nome curtíssimo
+  const prefix = (letters.charAt(0).toUpperCase() + letters.slice(1).toLowerCase()).padEnd(3, 'x');
+
+  // 4 dígitos criptograficamente aleatórios
+  const digits = Array.from(crypto.getRandomValues(new Uint8Array(4)))
+    .map(b => b % 10)
+    .join('');
+
+  return `${prefix}@${digits}`;
+}
+
+/* ── Toggle do painel ── */
+document.getElementById('smartImportToggle').addEventListener('click', function () {
+  const body  = document.getElementById('smartImportBody');
+  const caret = document.getElementById('smartImportCaret');
+  const open  = body.style.display !== 'none';
+  body.style.display  = open ? 'none'  : 'block';
+  caret.style.transform = open ? '' : 'rotate(180deg)';
+  this.classList.toggle('smart-import-toggle-open', !open);
+});
+
+/* ── Converter ── */
+document.getElementById('smartImportConvertBtn').addEventListener('click', function () {
+  const raw      = document.getElementById('smartImportInput').value.trim();
+  const resultEl = document.getElementById('smartImportResult');
+  const msgEl    = document.getElementById('smartImportResultMsg');
+  const badge    = document.getElementById('smartImportBadge');
+
+  if (!raw) { showToast('Cole o texto antes de converter.', '#f59e0b'); return; }
+
+  const records = parseSmartImportText(raw);
+  if (!records.length) {
+    showToast('Nenhum "Nome:" encontrado no texto.', '#ef4444');
+    return;
+  }
+
+  // Monta CSV lines: NomeCompleto,CPF,SenhaIndividual
+  const csvLines = records.map(r => {
+    const cpfClean = r.cpf.replace(/\D/g, '');
+    const { first } = parseFullName(r.name);
+    const password  = generateSmartPassword(first || r.name);
+    return `${r.name},${cpfClean || '00000000000'},${password}`;
+  });
+
+  const csvInput = document.getElementById('csvInput');
+  // Acrescenta ao CSV existente (ou substitui se estava vazio)
+  const existing = csvInput.value.trim();
+  csvInput.value = existing ? existing + '\n' + csvLines.join('\n') : csvLines.join('\n');
+
+  // Badge
+  badge.textContent = records.length;
+  badge.style.display = 'inline-flex';
+
+  // Resultado
+  const missing = records.filter(r => !r.cpf).length;
+  resultEl.style.display = 'flex';
+  resultEl.className = 'smart-import-result smart-import-result-ok';
+  msgEl.textContent = `${records.length} usuário(s) convertido(s) — senhas individuais geradas (ex: ${csvLines[0].split(',')[2]})` +
+    (missing ? ` — ⚠ ${missing} sem CPF` : '') + '.';
+
+  showToast(`${records.length} registro(s) convertido(s)! ✓`);
+});
+
+/* ---------- CSV Bulk — two-phase flow ---------- */
 
 function parseCsvLine(line) {
   return line.split(',').map(s => s.trim());
@@ -730,86 +840,236 @@ function parseCsvLine(line) {
 
 /**
  * Resolve um texto de OU (nome, DN parcial ou DN completo) para o DN exato do AD.
- * Se o AD_DATA não estiver disponível, retorna o texto como está (se parecer um DN)
- * ou null.
  */
 function resolveOuFromInput(text) {
   if (!text) return null;
   const trimmed = text.trim();
   if (!trimmed) return null;
-
-  // Se tivermos dados do AD, tenta resolver pelo mapa
   if (window.AD_DATA && window.AD_DATA.ous && window.AD_DATA.ous.length) {
     const resolved = resolveOuByName(trimmed);
     if (resolved) return resolved;
   }
-
-  // Sem AD_DATA: se parece um DN (contém '='), usa diretamente
   if (trimmed.includes('=')) return trimmed;
-
-  // Senão, não sabe o DN
   return null;
 }
 
-document.getElementById('bulkBtn').addEventListener('click', function () {
-  const raw   = document.getElementById('csvInput').value.trim();
-  if (!raw) { showToast('Cole o CSV antes de gerar.', '#f59e0b'); return; }
-
-  const domain = domainInput.value.trim() || 'orsegups.com.br';
-  const lines  = raw.split('\n').filter(l => l.trim());
-
-  // Detecta cabeçalho
+/**
+ * Parseia o CSV e detecta conflitos de SAM (no AD e dentro do próprio lote).
+ * Retorna array de objetos com campo `conflict` e `alternatives`.
+ */
+function parseBulkUsers(rawCsv, domain, globalOU) {
+  const lines = rawCsv.split('\n').filter(l => l.trim());
   const firstLine = lines[0].toLowerCase();
   const hasHeader = firstLine.includes('nome') || firstLine.includes('first') || firstLine.includes('cpf');
   const dataLines = hasHeader ? lines.slice(1) : lines;
 
-  if (!dataLines.length) { showToast('Nenhum dado encontrado no CSV.', '#f59e0b'); return; }
+  const ouResolved = resolveOuFromInput(globalOU) || '';
 
-  // OU Global: seletor de regional/setor ou OU padrão
-  const bulkOuSelect = document.getElementById('bulkOuSelect');
-  const globalOU = bulkOuSelect ? bulkOuSelect.value : '';
-
+  // Primeiro passe: gera SAMs primários
   const users = dataLines.map(line => {
     const [fullNameCsv = '', cpfRaw = '', password = 'Mudar@2025'] = parseCsvLine(line);
     const { first, last, surnames } = parseFullName(fullNameCsv.trim());
+    if (!first || !last) return null;
     const fn    = normalizeStr(first);
     const ln    = normalizeStr(last);
     const cpf11 = normalizeCPF(cpfRaw) || '00000000000';
     const sam   = ln ? `${fn}.${ln}` : fn;
-    const email = `${sam}@${domain}`;
+    return { firstName: first, lastName: last, surnames, fullName: fullNameCsv.trim(),
+             sam, email: `${sam}@${domain}`, cpf11, ou: ouResolved, password,
+             conflict: false, conflictReason: '', alternatives: [] };
+  }).filter(Boolean);
 
-    // OU vem exclusivamente do seletor global
-    const ouResolved = resolveOuFromInput(globalOU) || '';
+  // Rastreia SAMs já usados (AD + linhas anteriores do CSV)
+  const usedSams = new Set();
 
-    return { firstName: first, lastName: last, surnames, sam, email, cpf11, ou: ouResolved, password };
-  }).filter(u => u.firstName && u.lastName);
+  users.forEach(u => {
+    const samLower = u.sam.toLowerCase();
+    const inAd  = samExists(u.sam);
+    const inCsv = usedSams.has(samLower);
 
+    if (inAd || inCsv) {
+      u.conflict = true;
+      u.conflictReason = inAd ? 'Já existe no AD' : 'Duplicado no CSV';
+
+      // Gera alternativas livres (nem no AD, nem já usadas no CSV)
+      const alts = suggestAlternativeSams(u.fullName)
+        .filter(a => !samExists(a) && !usedSams.has(a.toLowerCase()));
+
+      // Tenta auto-resolver com a primeira alternativa disponível
+      if (alts.length) {
+        u.sam     = alts[0];
+        u.email   = `${alts[0]}@${domain}`;
+        u.alternatives = alts.slice(1, 6);   // demais para o usuário escolher
+        usedSams.add(alts[0].toLowerCase());
+      } else {
+        u.alternatives = [];
+        usedSams.add(samLower); // mantém o original com conflito marcado
+        return;
+      }
+    } else {
+      usedSams.add(samLower);
+    }
+  });
+
+  return users;
+}
+
+/* ── Fase 1: Analisar CSV → mostrar tabela de preview ── */
+let _bulkParsedUsers = [];
+
+document.getElementById('bulkParseBtn').addEventListener('click', function () {
+  const raw = document.getElementById('csvInput').value.trim();
+  if (!raw) { showToast('Cole o CSV antes de analisar.', '#f59e0b'); return; }
+
+  const domain   = domainInput.value.trim() || 'orsegups.com.br';
+  const globalOU = document.getElementById('bulkOuSelect').value;
+
+  const users = parseBulkUsers(raw, domain, globalOU);
   if (!users.length) { showToast('Nenhum usuário válido encontrado.', '#ef4444'); return; }
 
-  // Mostra quais OUs foram resolvidas / não resolvidas
-  const unresolved = users.filter(u => !u.ou);
-  if (unresolved.length) {
-    showToast(`⚠ ${unresolved.length} usuário(s) sem OU — será usada a padrão do domínio.`, '#f59e0b');
+  _bulkParsedUsers = users;
+
+  // ── Renderiza tabela de preview ──
+  const tbody    = document.getElementById('bulkPreviewBody');
+  const statsEl  = document.getElementById('bulkPreviewStats');
+  const noteEl   = document.getElementById('bulkPreviewNote');
+  tbody.innerHTML = '';
+
+  const conflictCount = users.filter(u => u.conflict).length;
+
+  users.forEach((u, i) => {
+    const tr = document.createElement('tr');
+    tr.dataset.idx = i;
+    if (u.conflict) tr.classList.add('bulk-row-conflict');
+
+    // Coluna #
+    const tdNum = document.createElement('td');
+    tdNum.textContent = i + 1;
+    tr.appendChild(tdNum);
+
+    // Nome completo
+    const tdName = document.createElement('td');
+    tdName.textContent = u.fullName;
+    tr.appendChild(tdName);
+
+    // SAM (editável via alternativas)
+    const tdSam = document.createElement('td');
+    const samWrap = document.createElement('div');
+    samWrap.className = 'bulk-sam-cell';
+
+    const samSpan = document.createElement('span');
+    samSpan.className = 'bulk-sam-value' + (u.conflict ? ' bulk-sam-auto' : '');
+    samSpan.textContent = u.sam;
+    samSpan.id = `bulk-sam-${i}`;
+    samWrap.appendChild(samSpan);
+
+    // Botões de alternativas adicionais (caso queira trocar)
+    if (u.conflict && u.alternatives.length) {
+      const altsWrap = document.createElement('div');
+      altsWrap.className = 'bulk-sam-alts';
+      u.alternatives.forEach(alt => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'sam-alt-btn sam-alt-btn-sm';
+        btn.textContent = alt;
+        btn.title = `Usar: ${alt}@${domain}`;
+        btn.addEventListener('click', () => {
+          _bulkParsedUsers[i].sam   = alt;
+          _bulkParsedUsers[i].email = `${alt}@${domain}`;
+          samSpan.textContent = alt;
+          samSpan.className = 'bulk-sam-value bulk-sam-chosen';
+          altsWrap.querySelectorAll('.sam-alt-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          tr.classList.remove('bulk-row-conflict');
+          tr.classList.add('bulk-row-resolved');
+          updatePreviewStats();
+        });
+        altsWrap.appendChild(btn);
+      });
+      samWrap.appendChild(altsWrap);
+    }
+
+    tdSam.appendChild(samWrap);
+    tr.appendChild(tdSam);
+
+    // Email
+    const tdEmail = document.createElement('td');
+    tdEmail.className = 'bulk-email-cell';
+    tdEmail.textContent = u.email;
+    tdEmail.id = `bulk-email-${i}`;
+    tr.appendChild(tdEmail);
+
+    // Status
+    const tdStatus = document.createElement('td');
+    if (u.conflict) {
+      tdStatus.innerHTML = `<span class="bulk-status-badge bulk-status-conflict">⚡ ${u.conflictReason} — Auto-corrigido</span>`;
+    } else {
+      tdStatus.innerHTML = `<span class="bulk-status-badge bulk-status-ok">✓ OK</span>`;
+    }
+    tr.appendChild(tdStatus);
+
+    tbody.appendChild(tr);
+  });
+
+  // Stats
+  function updatePreviewStats() {
+    const remaining = document.querySelectorAll('#bulkPreviewBody tr.bulk-row-conflict').length;
+    statsEl.innerHTML = `
+      <span class="bulk-stat bulk-stat-total">${users.length} usuário(s)</span>
+      ${conflictCount ? `<span class="bulk-stat bulk-stat-warn">⚡ ${conflictCount} conflito(s) detectado(s)</span>` : ''}
+      ${remaining ? `<span class="bulk-stat bulk-stat-warn">${remaining} ainda com conflito</span>` : ''}
+    `;
+    noteEl.textContent = conflictCount
+      ? 'Logins conflitantes foram auto-corrigidos. Você pode escolher uma alternativa diferente clicando nos botões abaixo de cada login.'
+      : 'Nenhum conflito detectado. Revise os dados e confirme para gerar o script.';
+  }
+  updatePreviewStats();
+
+  // Mostra a área de preview e colapsa o bulk-left
+  document.getElementById('bulkPreviewArea').style.display = 'block';
+  document.getElementById('bulkPreviewArea').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  showToast(`${users.length} usuário(s) analisado(s)${conflictCount ? ` — ${conflictCount} conflito(s) auto-corrigido(s)` : ''}! ✓`);
+});
+
+/* ── Cancelar preview ── */
+document.getElementById('bulkCancelPreviewBtn').addEventListener('click', function () {
+  document.getElementById('bulkPreviewArea').style.display = 'none';
+  _bulkParsedUsers = [];
+});
+
+/* ── Fase 2: Confirmar e Gerar Script ── */
+document.getElementById('bulkBtn').addEventListener('click', function () {
+  if (!_bulkParsedUsers.length) { showToast('Analise o CSV primeiro.', '#f59e0b'); return; }
+
+  const domain = domainInput.value.trim() || 'orsegups.com.br';
+  const unresolved = document.querySelectorAll('#bulkPreviewBody tr.bulk-row-conflict').length;
+  if (unresolved) {
+    showToast(`⚠ ${unresolved} usuário(s) ainda com conflito não resolvido — revise antes de gerar.`, '#f59e0b');
+    return;
   }
 
   const templateUserBulk = document.getElementById('templateUserBulk').value.trim();
-  const script = generateBulkScript(users, domain, templateUserBulk);
+  const script = generateBulkScript(_bulkParsedUsers, domain, templateUserBulk);
 
-  const bulkCode      = document.getElementById('bulkCode');
-  const bulkOutput    = document.getElementById('bulkOutput');
-  const bulkEmpty     = document.getElementById('bulkEmptyState');
-  const bulkActions   = document.getElementById('bulkOutputActions');
+  const bulkCode    = document.getElementById('bulkCode');
+  const bulkOutput  = document.getElementById('bulkOutput');
+  const bulkEmpty   = document.getElementById('bulkEmptyState');
+  const bulkActions = document.getElementById('bulkOutputActions');
 
   bulkCode.innerHTML = highlight(script);
   bulkOutput.style.display  = 'block';
   bulkEmpty.style.display   = 'none';
   bulkActions.style.display = 'flex';
 
-  document.getElementById('copyBulkBtn')._script   = script;
+  document.getElementById('copyBulkBtn')._script       = script;
   document.getElementById('downloadBulkBtn')._script   = script;
   document.getElementById('downloadBulkBtn')._filename = 'criar_usuarios_lote.ps1';
 
-  showToast(`${users.length} usuário(s) processado(s)! ✓`);
+  // Oculta preview após gerar
+  document.getElementById('bulkPreviewArea').style.display = 'none';
+
+  showToast(`Script gerado para ${_bulkParsedUsers.length} usuário(s)! ✓`);
 });
 
 document.getElementById('copyBulkBtn').addEventListener('click', function () {
@@ -906,7 +1166,13 @@ openOuPickerBtn.addEventListener('click', () => {
   setTimeout(() => treeSearchEl.focus(), 80);
 });
 
-function closeModal()  { ouModal.style.display = 'none'; }
+// Usuário que foi clicado na árvore para ser usado como modelo
+let _pendingTemplateUser = null;
+
+function closeModal() {
+  ouModal.style.display = 'none';
+  _pendingTemplateUser = null; // descarta se o modal for fechado sem confirmar
+}
 closeOuModalBtn.addEventListener('click',  closeModal);
 cancelOuModalBtn.addEventListener('click', closeModal);
 ouModal.addEventListener('click', e => { if (e.target === ouModal) closeModal(); });
@@ -914,6 +1180,11 @@ ouModal.addEventListener('click', e => { if (e.target === ouModal) closeModal();
 confirmOuModalBtn.addEventListener('click', () => {
   selectedNode = pendingNode;
   applySelection();
+  // Se um usuário foi escolhido na árvore como modelo, aplica agora
+  if (_pendingTemplateUser && window._applyTemplateUser) {
+    window._applyTemplateUser(_pendingTemplateUser);
+  }
+  _pendingTemplateUser = null;
   closeModal();
 });
 
@@ -966,16 +1237,64 @@ function renderTree(filter) {
  *   Nesse caso, todos os descendentes devem ser exibidos (o usuário achou a pasta-pai
  *   e quer ver o que há dentro dela).
  */
+/**
+ * Índice (cache) de usuários agrupados por OU (DN lowercase).
+ * Construído uma vez e invalidado quando AD_DATA muda.
+ */
+let _usersByOuCache = null;
+let _usersByOuSource = null; // referência para detectar mudança
+
+function _buildUsersIndex() {
+  if (!window.AD_DATA || !Array.isArray(window.AD_DATA.users)) return {};
+  // Só constrói se pelo menos um usuário tiver o campo 'ou'
+  if (!window.AD_DATA.users.some(u => u.ou)) return {};
+  const map = {};
+  for (const u of window.AD_DATA.users) {
+    if (!u.ou) continue;
+    const key = u.ou.toLowerCase();
+    if (!map[key]) map[key] = [];
+    map[key].push(u);
+  }
+  return map;
+}
+
+/** Retorna os usuários dentro de uma OU (por DN exato). Usa cache interno. */
+function getUsersInOU(dn) {
+  if (!dn || !window.AD_DATA) return [];
+  // Reconstrói o cache se AD_DATA mudou
+  if (_usersByOuSource !== window.AD_DATA.users) {
+    _usersByOuCache  = _buildUsersIndex();
+    _usersByOuSource = window.AD_DATA.users;
+  }
+  return _usersByOuCache[dn.toLowerCase()] || [];
+}
+
 function renderNode(node, parentTrail, container, filter, domain, parentMatched) {
   const trail = [...parentTrail, node.name];
   const dn    = node.exactDn || buildDN(trail, domain);
-  const hasChildren = !!(node.children && node.children.length);
+  const hasOuChildren = !!(node.children && node.children.length);
+
+  // Usuários que pertencem a este nó (só se AD_DATA tiver campo 'ou')
+  const usersInOu = getUsersInOU(dn);
+  const hasUsers  = usersInOu.length > 0;
+  const hasChildren = hasOuChildren || hasUsers;
 
   const matchesSelf = !filter || node.name.toLowerCase().includes(filter.toLowerCase());
-  const childrenHit = hasChildren && nodeOrChildMatches(node, filter);
+  const childrenHit = hasOuChildren && nodeOrChildMatches(node, filter);
 
-  // Oculta apenas se: há filtro E nem este nó nem nenhum filho corresponde E o pai também não correspondeu
-  if (filter && !matchesSelf && !childrenHit && !parentMatched) return;
+  // Verifica se algum usuário da OU bate no filtro (com precedência explícita)
+  let usersHit = false;
+  if (hasUsers && filter) {
+    const f = filter.toLowerCase();
+    usersHit = usersInOu.some(u =>
+      (u.displayName    || '').toLowerCase().includes(f) ||
+      (u.samAccountName || '').toLowerCase().includes(f) ||
+      (u.department     || '').toLowerCase().includes(f)
+    );
+  }
+
+  // Oculta se: há filtro E nem este nó nem nenhum filho corresponde E o pai não correspondeu
+  if (filter && !matchesSelf && !childrenHit && !usersHit && !parentMatched) return;
 
   // Se este nó corresponde, seus filhos são exibidos independentemente do filtro
   const thisMatched = parentMatched || matchesSelf;
@@ -990,11 +1309,123 @@ function renderNode(node, parentTrail, container, filter, domain, parentMatched)
   if (hasChildren && expandedIds.has(node.id)) {
     const childrenWrap = document.createElement('div');
     childrenWrap.className = 'tree-children';
-    node.children.forEach(child =>
-      renderNode(child, trail, childrenWrap, filter, domain, thisMatched)
-    );
+
+    // Primeiro: sub-OUs
+    if (hasOuChildren) {
+      node.children.forEach(child =>
+        renderNode(child, trail, childrenWrap, filter, domain, thisMatched)
+      );
+    }
+
+    // Depois: usuários dentro desta OU (só quando há dados com campo 'ou')
+    if (hasUsers) {
+      const f = filter ? filter.toLowerCase() : '';
+      const filtered = filter
+        ? usersInOu.filter(u =>
+            thisMatched ||
+            (u.displayName    || '').toLowerCase().includes(f) ||
+            (u.samAccountName || '').toLowerCase().includes(f) ||
+            (u.department     || '').toLowerCase().includes(f)
+          )
+        : usersInOu;
+
+      if (filtered.length) {
+        const sep = document.createElement('div');
+        sep.className = 'tree-user-separator';
+        sep.textContent = `${filtered.length} usuário${filtered.length !== 1 ? 's' : ''}`;
+        childrenWrap.appendChild(sep);
+
+        filtered.forEach(u => {
+          childrenWrap.appendChild(createUserLeafRow(u, dn, filter));
+        });
+      }
+    }
+
     wrapper.appendChild(childrenWrap);
   }
+}
+
+/**
+ * Cria uma linha de usuário dentro da árvore de OUs.
+ * Clicar no usuário:
+ *   1. Seleciona a OU onde ele está (pendingNode)
+ *   2. Marca o usuário como template pendente (_pendingTemplateUser)
+ *   3. Atualiza o painel de detalhes
+ */
+function createUserLeafRow(u, ouDn, filter) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'tree-node';
+
+  const row = document.createElement('div');
+  row.className = 'tree-node-row tree-user-row';
+
+  // Avatar com iniciais
+  const avatar = document.createElement('span');
+  avatar.className = 'tree-user-avatar';
+  const nm = u.displayName || u.samAccountName || '?';
+  const parts = nm.trim().split(/\s+/);
+  avatar.textContent = parts.length > 1
+    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    : parts[0][0].toUpperCase();
+
+  // Nome + dept
+  const info = document.createElement('span');
+  info.className = 'tree-user-info';
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'tree-user-name';
+  const nameText = u.displayName || u.samAccountName;
+  if (filter) {
+    const esc = escapeRegex(filter);
+    nameEl.innerHTML = nameText.replace(new RegExp(`(${esc})`, 'gi'), '<mark>$1</mark>');
+  } else {
+    nameEl.textContent = nameText;
+  }
+
+  const metaEl = document.createElement('span');
+  metaEl.className = 'tree-user-meta';
+  metaEl.textContent = [
+    u.samAccountName,
+    u.department || '',
+  ].filter(Boolean).join(' · ');
+
+  info.appendChild(nameEl);
+  info.appendChild(metaEl);
+
+  // Badge de grupos
+  const groupsArray = Array.isArray(u.groups) ? u.groups : (typeof u.groups === 'string' ? [u.groups] : []);
+  const groupCount = groupsArray.length;
+  const groupBadge = document.createElement('span');
+  groupBadge.className = 'tree-user-group-badge';
+  groupBadge.textContent = groupCount ? `${groupCount} grupo${groupCount !== 1 ? 's' : ''}` : '—';
+  groupBadge.title = groupCount ? `Grupos: ${groupsArray.join(', ')}` : 'Sem grupos de segurança';
+
+  // Indicador: usuário selecionado como modelo pendente
+  const isSelected = _pendingTemplateUser && _pendingTemplateUser.samAccountName === u.samAccountName;
+  if (isSelected) row.classList.add('tree-user-selected');
+
+  row.appendChild(avatar);
+  row.appendChild(info);
+  row.appendChild(groupBadge);
+  wrapper.appendChild(row);
+
+  row.addEventListener('click', (e) => {
+    e.stopPropagation();
+
+    // Seleciona a OU deste usuário como pendingNode
+    // Extrai o trail a partir do DN da OU
+    const ouParts = ouDn.split(',').filter(p => p.trim().toUpperCase().startsWith('OU=')).map(p => p.trim().slice(3)).reverse();
+    pendingNode = { name: ouParts[ouParts.length - 1] || ouDn, trail: ouParts, dn: ouDn };
+    updateDetailPanel(pendingNode);
+
+    // Marca o usuário como template pendente
+    _pendingTemplateUser = u;
+
+    // Atualiza a seleção visual: remove seleção anterior e re-renderiza
+    renderTree(treeSearchEl.value);
+  });
+
+  return wrapper;
 }
 
 function nodeOrChildMatches(node, filter) {
@@ -1080,6 +1511,7 @@ function updateDetailPanel(node) {
     detailDnEl.textContent   = '—';
     selectedPathEl.textContent = 'Nenhuma OU selecionada — será usada a OU padrão do domínio';
     selectedPathEl.classList.remove('active');
+    _updateModalUserBanner(null);
     return;
   }
   detailIconEl.textContent = '📂';
@@ -1087,11 +1519,55 @@ function updateDetailPanel(node) {
   detailDnEl.textContent   = node.dn;
   selectedPathEl.textContent = node.dn;
   selectedPathEl.classList.add('active');
+  _updateModalUserBanner(_pendingTemplateUser);
+}
+
+/** Exibe/oculta o banner de "usuário modelo selecionado" no rodapé do modal */
+function _updateModalUserBanner(u) {
+  let banner = document.getElementById('_modalUserBanner');
+  if (!u) {
+    if (banner) banner.style.display = 'none';
+    return;
+  }
+  if (!banner) {
+    // Cria o banner na primeira vez e insere antes do selectedPathPreview
+    banner = document.createElement('div');
+    banner.id = '_modalUserBanner';
+    banner.className = 'modal-user-banner';
+    const footer = document.getElementById('selectedPathPreview')?.parentElement;
+    if (footer) footer.insertBefore(banner, footer.firstChild);
+  }
+  const groupsArray = Array.isArray(u.groups) ? u.groups : (typeof u.groups === 'string' ? [u.groups] : []);
+  const groups = groupsArray.length;
+  banner.innerHTML = `
+    <div class="modal-user-banner-avatar">${
+      (() => {
+        const nm = u.displayName || u.samAccountName || '?';
+        const p  = nm.trim().split(/\s+/);
+        return p.length > 1 ? (p[0][0]+p[p.length-1][0]).toUpperCase() : p[0][0].toUpperCase();
+      })()
+    }</div>
+    <div class="modal-user-banner-info">
+      <div class="modal-user-banner-name">${u.displayName || u.samAccountName}</div>
+      <div class="modal-user-banner-meta">${u.samAccountName}${u.department ? ' · '+u.department : ''}
+        <span class="modal-user-banner-groups">${groups} grupo${groups !== 1 ? 's' : ''} serão copiados</span>
+      </div>
+    </div>
+    <div class="modal-user-banner-label">Modelo</div>`;
+  banner.style.display = 'flex';
 }
 
 treeSearchEl.addEventListener('input', function () {
   const term = this.value.trim();
-  if (term) { expandAll(ouTree); expandedIds.add('__root__'); }
+  if (term) {
+    // Expande TODOS os nós para que o filtro possa mostrar os resultados internos
+    expandedIds = new Set(['__root__']);
+    expandAll(ouTree);
+  } else {
+    // Sem filtro: volta ao estado padrão (só raiz e primeiros nós expandidos)
+    expandedIds = new Set(['__root__']);
+    ouTree.slice(0, 3).forEach(n => expandedIds.add(n.id));
+  }
   renderTree(term);
 });
 
@@ -1599,6 +2075,8 @@ function initUserSearch({
   searchInputId, dropdownId, hiddenInputId,
   chipId, chipAvatarId, chipNameId, chipSamId,
   clearBtnId, removeBtnId,
+  ouInputId,      // (opcional) id do input hidden de OU — para preencher com a OU do modelo
+  groupsPanelId,  // (opcional) id do painel onde os grupos do modelo serão exibidos
 }) {
   const searchInput = document.getElementById(searchInputId);
   const dropdown    = document.getElementById(dropdownId);
@@ -1609,6 +2087,8 @@ function initUserSearch({
   const chipSam     = document.getElementById(chipSamId);
   const clearBtn    = document.getElementById(clearBtnId);
   const removeBtn   = document.getElementById(removeBtnId);
+  const ouInput     = ouInputId     ? document.getElementById(ouInputId)     : null;
+  const groupsPanel = groupsPanelId ? document.getElementById(groupsPanelId) : null;
 
   if (!searchInput) return; // elemento não existe na página
 
@@ -1663,6 +2143,8 @@ function initUserSearch({
       const item = document.createElement('div');
       item.className = 'user-dropdown-item';
       const initials = getInitials(u.displayName || u.samAccountName);
+      const groupsArray = Array.isArray(u.groups) ? u.groups : (typeof u.groups === 'string' ? [u.groups] : []);
+      const groupCount = groupsArray.length;
       item.innerHTML = `
         <div class="user-dropdown-avatar">${initials}</div>
         <div class="user-dropdown-info">
@@ -1670,12 +2152,38 @@ function initUserSearch({
           <div class="user-dropdown-meta">
             <span class="user-dropdown-sam">${hlText(u.samAccountName, term)}</span>
             ${u.department ? `<span class="user-dropdown-dept">${u.department}</span>` : ''}
+            ${groupCount ? `<span class="user-dropdown-groups-badge">${groupCount} grupo${groupCount !== 1 ? 's' : ''}</span>` : ''}
           </div>
         </div>`;
       item.addEventListener('mousedown', e => { e.preventDefault(); selectUser(u); });
       dropdown.appendChild(item);
     });
     dropdown.style.display = 'block';
+  }
+
+  /** Renderiza o painel de grupos do usuário modelo */
+  function renderGroupsPanel(u) {
+    if (!groupsPanel) return;
+    const groups = Array.isArray(u?.groups) ? u.groups : (typeof u?.groups === 'string' ? [u.groups] : []);
+
+    if (!groups.length) {
+      groupsPanel.style.display = 'none';
+      return;
+    }
+
+    groupsPanel.innerHTML = `
+      <div class="model-groups-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        Grupos do modelo <strong>${u.displayName || u.samAccountName}</strong>
+        <span class="model-groups-count">${groups.length} grupo${groups.length !== 1 ? 's' : ''} serão copiados</span>
+      </div>
+      <div class="model-groups-list">
+        ${groups.map(g => `<span class="model-group-tag">${g}</span>`).join('')}
+      </div>`;
+    groupsPanel.style.display = 'block';
   }
 
   function selectUser(u) {
@@ -1690,6 +2198,33 @@ function initUserSearch({
     searchInput.value      = '';
     clearBtn.style.display = 'none';
     dropdown.style.display = 'none';
+
+    // ── Preenche a OU automaticamente com a OU do usuário modelo ──
+    if (ouInput && u.ou) {
+      ouInput.value = u.ou;
+      // Atualiza o label do picker de OU para refletir a seleção automática
+      const pickerLabel = document.getElementById('ouPickerLabel');
+      const breadcrumb  = document.getElementById('ouBreadcrumb');
+      const pickerBtn   = document.getElementById('openOuPicker');
+      if (pickerLabel) pickerLabel.textContent = u.ou;
+      if (pickerBtn)   pickerBtn.classList.add('has-value');
+      if (breadcrumb) {
+        const domain = document.getElementById('domain')?.value || 'orsegups.com.br';
+        // Extrai as partes OU= do DN para mostrar o breadcrumb
+        const parts = u.ou.split(',').filter(p => p.trim().toUpperCase().startsWith('OU=')).map(p => p.trim().slice(3)).reverse();
+        const allParts = [domain, ...parts];
+        breadcrumb.innerHTML = allParts.map((p, i, arr) => {
+          const isLast = i === arr.length - 1;
+          return `<span class="bc-part">${p}</span>` + (isLast ? '' : '<span class="bc-sep"> › </span>');
+        }).join('');
+        breadcrumb.style.display = 'flex';
+      }
+      // Atualiza o nó selecionado internamente para que o modal também saiba
+      selectedNode = { name: u.ou.split(',')[0]?.replace(/^OU=/i,'') || u.ou, trail: [], dn: u.ou };
+    }
+
+    // ── Exibe os grupos do modelo ──
+    renderGroupsPanel(u);
   }
 
   function clearSelection() {
@@ -1697,6 +2232,7 @@ function initUserSearch({
     chip.style.display     = 'none';
     searchInput.value      = '';
     clearBtn.style.display = 'none';
+    if (groupsPanel) groupsPanel.style.display = 'none';
   }
 
   searchInput.addEventListener('input', function () {
@@ -1763,10 +2299,13 @@ function initUserSearch({
   });
 
   removeBtn.addEventListener('click', clearSelection);
+
+  // Retorna a função de seleção para uso externo (ex: seletor de OU na árvore)
+  return { selectUser };
 }
 
 // ── Instância para o formulário individual ──
-initUserSearch({
+const _templateSearchInstance = initUserSearch({
   searchInputId : 'templateUserSearch',
   dropdownId    : 'userDropdown',
   hiddenInputId : 'templateUser',
@@ -1776,7 +2315,11 @@ initUserSearch({
   chipSamId     : 'templateChipSam',
   clearBtnId    : 'clearTemplateUser',
   removeBtnId   : 'removeTemplateUser',
+  ouInputId     : 'ou',               // preenche a OU automaticamente
+  groupsPanelId : 'templateGroupsPanel', // exibe os grupos do modelo
 });
+// Exposta globalmente para que a árvore de OUs possa acionar ao clicar num usuário
+window._applyTemplateUser = _templateSearchInstance?.selectUser;
 
 // ── Instância para o formulário de lote ──
 initUserSearch({
@@ -1789,6 +2332,7 @@ initUserSearch({
   chipSamId     : 'templateChipSamBulk',
   clearBtnId    : 'clearTemplateUserBulk',
   removeBtnId   : 'removeTemplateUserBulk',
+  groupsPanelId : 'templateGroupsPanelBulk', // exibe grupos no lote também
 });
 
 /* ═══════════════════════════════════════════════════════════════

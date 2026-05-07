@@ -231,7 +231,9 @@
               </div>
             </div>
             <input type="hidden" id="templateUser" />
-            <span class="field-hint">Os grupos de segurança do AD serão copiados para o novo usuário</span>
+            <!-- Painel de grupos do usuário modelo -->
+            <div class="template-groups-panel" id="templateGroupsPanel" style="display:none"></div>
+            <span class="field-hint">Os grupos de segurança do AD serão copiados para o novo usuário. A OU também será preenchida automaticamente.</span>
           </div>
 
 
@@ -424,6 +426,58 @@
 
       <div class="bulk-layout">
         <div class="bulk-left">
+          <!-- ══ SMART IMPORT PANEL ══ -->
+          <div class="smart-import-wrap" id="smartImportWrap">
+            <button type="button" class="smart-import-toggle" id="smartImportToggle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                <path d="M2 17l10 5 10-5"/>
+                <path d="M2 12l10 5 10-5"/>
+              </svg>
+              Importar texto livre (Nome/CPF)
+              <span class="smart-import-badge" id="smartImportBadge" style="display:none">0</span>
+              <svg class="smart-import-caret" id="smartImportCaret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
+
+            <div class="smart-import-body" id="smartImportBody" style="display:none">
+              <p class="smart-import-desc">
+                Cole qualquer texto com <code>Nome:</code> e <code>CPF:</code> — o sistema extrai e converte automaticamente para CSV.
+              </p>
+
+              <textarea id="smartImportInput"
+                class="smart-import-textarea"
+                placeholder="Nome: HALEY SETEMBRINO DE ABREU E SILVA FILHO&#10;CPF: 88511626891&#10;Matrícula: 18/1461&#10;___________________&#10;Nome: LUÍS CARLOS DE ALMEIDA NEVES&#10;CPF: 031.008.588-83&#10;..."></textarea>
+
+              <div class="smart-import-options">
+                <div class="smart-import-pw-info">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                  </svg>
+                  Senha gerada automaticamente por usuário:
+                  <code>3 letras do nome + @ + 4 dígitos aleatórios</code>
+                  <span class="smart-pw-example">Ex: Fra@5678</span>
+                </div>
+                <button type="button" class="btn-smart-convert" id="smartImportConvertBtn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="16 18 22 12 16 6"/>
+                    <polyline points="8 6 2 12 8 18"/>
+                  </svg>
+                  Converter para CSV
+                </button>
+              </div>
+
+              <div class="smart-import-result" id="smartImportResult" style="display:none">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                <span id="smartImportResultMsg"></span>
+              </div>
+            </div>
+          </div>
+
           <div class="csv-hint">
             <strong>Formato esperado (sem cabeçalho ou com cabeçalho):</strong>
             <code>NomeCompleto,CPF,Senha</code>
@@ -467,21 +521,74 @@
               </div>
             </div>
             <input type="hidden" id="templateUserBulk" />
+            <!-- Painel de grupos do usuário modelo (lote) -->
+            <div class="template-groups-panel" id="templateGroupsPanelBulk" style="display:none"></div>
             <span class="field-hint">Os grupos de segurança do AD serão copiados para todos os novos usuários</span>
           </div>
 
           <div class="bulk-actions">
-            <button class="btn-generate btn-sm-variant" id="bulkBtn">
+            <button class="btn-generate btn-sm-variant" id="bulkParseBtn">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
               </svg>
-              Gerar Script em Lote
+              Analisar CSV
             </button>
           </div>
         </div>
+
+        <!-- ══ PREVIEW TABLE (shown after parse) ══ -->
+        <div class="bulk-preview-area" id="bulkPreviewArea" style="display:none">
+          <div class="bulk-preview-header">
+            <div class="bulk-preview-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+              Pré-visualização do Lote
+            </div>
+            <div class="bulk-preview-stats" id="bulkPreviewStats"></div>
+          </div>
+
+          <div class="bulk-preview-scroll">
+            <table class="bulk-preview-table" id="bulkPreviewTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Nome Completo</th>
+                  <th>Login (SAM)</th>
+                  <th>E-mail</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="bulkPreviewBody"></tbody>
+            </table>
+          </div>
+
+          <div class="bulk-preview-footer">
+            <span class="bulk-preview-note" id="bulkPreviewNote"></span>
+            <div class="bulk-preview-actions">
+              <button class="btn-sm" id="bulkCancelPreviewBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+                Cancelar
+              </button>
+              <button class="btn-generate btn-sm-variant" id="bulkBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+                Confirmar e Gerar Script
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div class="bulk-right">
           <div class="code-area bulk-code" id="bulkCodeArea">
             <div class="empty-state" id="bulkEmptyState">
@@ -995,16 +1102,19 @@
       </div>
 
       <div class="modal-footer">
-        <div class="selected-path-preview" id="selectedPathPreview">Nenhuma OU selecionada — será usada a OU padrão do
-          domínio</div>
-        <div class="modal-footer-actions">
-          <button type="button" class="btn-modal-cancel" id="cancelOuModal">Cancelar</button>
-          <button type="button" class="btn-modal-confirm" id="confirmOuModal">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            Confirmar seleção
-          </button>
+        <!-- Banner de usuário modelo é inserido dinamicamente pelo JS aqui -->
+        <div class="modal-footer-row">
+          <div class="selected-path-preview" id="selectedPathPreview">Nenhuma OU selecionada — será usada a OU padrão do
+            domínio</div>
+          <div class="modal-footer-actions">
+            <button type="button" class="btn-modal-cancel" id="cancelOuModal">Cancelar</button>
+            <button type="button" class="btn-modal-confirm" id="confirmOuModal">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              Confirmar seleção
+            </button>
+          </div>
         </div>
       </div>
 
