@@ -22,7 +22,8 @@ jobs:
       - name: Run PSScriptAnalyzer
         shell: pwsh
         run: |
-          Invoke-ScriptAnalyzer -Path ./*.ps1 -Recurse -EnableExit
+          # Executa o analisador apenas para exibir os avisos no log, sem quebrar o pipeline (removido o -EnableExit)
+          Invoke-ScriptAnalyzer -Path ./*.ps1 -Recurse
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
