@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Servidor HTTP local — AD User Creator
     Permite executar scripts de criação de usuários AD diretamente do navegador.
@@ -103,7 +103,13 @@ function Send-Json {
     $r.StatusCode      = $Status
     $r.ContentType     = 'application/json; charset=utf-8'
     $r.ContentLength64 = $bytes.Length
-    $r.Headers.Add('Access-Control-Allow-Origin',  '*')
+
+    $origin = $Ctx.Request.Headers['Origin']
+    $allowOrigin = if ([string]::IsNullOrEmpty($origin) -or $origin -eq 'null') { 'null' } elseif ($origin -match '^https?://(localhost|127\.0\.0\.1)(:\d+)?$') { $origin } else { $null }
+    
+    if ($allowOrigin) {
+        $r.Headers.Add('Access-Control-Allow-Origin',  $allowOrigin)
+    }
     $r.Headers.Add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
     $r.Headers.Add('Access-Control-Allow-Headers', 'Content-Type, X-Server-Token')
     $r.Headers.Add('Cache-Control', 'no-store')
@@ -128,13 +134,30 @@ try {
 
         Write-Host "  $(Get-Date -Format 'HH:mm:ss')  $method $path" -ForegroundColor DarkGray
 
+        # ── CORS Seguro: Aceitar apenas origin "null" (file://) ou localhost ──
+        $origin = $req.Headers['Origin']
+        $safeOrigin = $null
+        if ([string]::IsNullOrEmpty($origin) -or $origin -eq 'null') {
+            $safeOrigin = 'null'
+        } elseif ($origin -match '^https?://(localhost|127\.0\.0\.1)(:\d+)?$') {
+            $safeOrigin = $origin
+        }
+
         # ── CORS Preflight ──────────────────────────────────────────────
         if ($method -eq 'OPTIONS') {
             $ctx.Response.StatusCode = 204
-            $ctx.Response.Headers.Add('Access-Control-Allow-Origin',  '*')
+            if ($safeOrigin) { $ctx.Response.Headers.Add('Access-Control-Allow-Origin', $safeOrigin) }
             $ctx.Response.Headers.Add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
             $ctx.Response.Headers.Add('Access-Control-Allow-Headers', 'Content-Type, X-Server-Token')
             try { $ctx.Response.OutputStream.Close() } catch {}
+            continue
+        }
+
+        # Se houver Origin, mas não for seguro, bloquear
+        if (-not [string]::IsNullOrEmpty($origin) -and -not $safeOrigin) {
+            $ctx.Response.StatusCode = 403
+            try { $ctx.Response.OutputStream.Close() } catch {}
+            Write-Host "    ⚠  Requisição bloqueada por CORS (Origin não permitida: $origin)" -ForegroundColor Yellow
             continue
         }
 

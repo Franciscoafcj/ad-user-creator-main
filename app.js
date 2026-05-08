@@ -10,6 +10,22 @@
 
 /* ---------- Helpers ---------- */
 
+/** Escapa HTML para prevenir XSS */
+function escapeHTML(str) {
+  if (!str && str !== 0) return '';
+  return String(str).replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
+}
+
+/** Escapa aspas simples para prevenir Injeção no PowerShell */
+function escapePS(str) {
+  if (!str && str !== 0) return '';
+  return String(str).replace(/'/g, "''");
+}
+
 /** Normaliza string para uso em login/email (remove acentos, espaços, toLowerCase) */
 function normalizeStr(str) {
   return str
@@ -199,15 +215,15 @@ function generateScript(u) {
     `Import-Module Microsoft.PowerShell.Security -ErrorAction SilentlyContinue`,
     ``,
     `# ── Dados do Usuário ────────────────────────────────────────────`,
-    `$FirstName    = "${firstName}"`,
-    `$LastName     = "${lastNameField}"`,
-    `$FullName     = "${displayName}"`,
-    `$SamAccount   = "${sam}"`,
-    `$UPN          = "${email}"`,
-    `$Email        = "${email}"`,
-    `$CPF          = "${cpf11}"         # CPF sem pontuação, 11 dígitos`,
-    `$OU           = ${ouLine}`,
-    `$Password     = ConvertTo-SecureString "${password}" -AsPlainText -Force`,
+    `$FirstName    = '${escapePS(firstName)}'`,
+    `$LastName     = '${escapePS(lastNameField)}'`,
+    `$FullName     = '${escapePS(displayName)}'`,
+    `$SamAccount   = '${escapePS(sam)}'`,
+    `$UPN          = '${escapePS(email)}'`,
+    `$Email        = '${escapePS(email)}'`,
+    `$CPF          = '${escapePS(cpf11)}'         # CPF sem pontuação, 11 dígitos`,
+    `$OU           = ${ou ? `'${escapePS(ou)}'` : `'OU=Usuarios,${dcParts}'`}`,
+    `$Password     = ConvertTo-SecureString '${escapePS(password)}' -AsPlainText -Force`,
     ``,
     `# ── Criar Usuário ───────────────────────────────────────────────`,
     `try {`,
@@ -241,7 +257,7 @@ function generateScript(u) {
       ``,
       `# ── Copiar Grupos do Usuário Modelo ─────────────────────────────`,
       `# Modelo: ${templateUser}`,
-      `$Modelo = "${templateUser}"`,
+      `$Modelo = '${escapePS(templateUser)}'`,
       ``,
       `try {`,
       `    $Grupos = Get-ADPrincipalGroupMembership -Identity $Modelo |`,
@@ -275,7 +291,7 @@ function generateScript(u) {
 /** Gera script em lote a partir de um array de usuários */
 function generateBulkScript(users, domain, templateUser) {
   const dcParts = domain.split('.').map(p => `DC=${p}`).join(',');
-  const defaultOU = `"OU=Usuarios,${dcParts}"`;
+  const defaultOU = `'OU=Usuarios,${dcParts}'`;
 
   const header = [
     `# ================================================================`,
@@ -296,14 +312,14 @@ function generateBulkScript(users, domain, templateUser) {
     const fullNameField = u.fullName || `${u.firstName} ${lastNameField}`;
     return [
       `    @{`,
-      `        FirstName   = "${u.firstName}"`,
-      `        LastName    = "${lastNameField}"`,
-      `        FullName    = "${fullNameField}"`,
-      `        Sam         = "${u.sam}"`,
-      `        Email       = "${u.email}"`,
-      `        CPF         = "${u.cpf11}"`,
-      `        OU          = ${u.ou ? `"${u.ou}"` : defaultOU}`,
-      `        Password    = "${u.password}"`,
+      `        FirstName   = '${escapePS(u.firstName)}'`,
+      `        LastName    = '${escapePS(lastNameField)}'`,
+      `        FullName    = '${escapePS(fullNameField)}'`,
+      `        Sam         = '${escapePS(u.sam)}'`,
+      `        Email       = '${escapePS(u.email)}'`,
+      `        CPF         = '${escapePS(u.cpf11)}'`,
+      `        OU          = ${u.ou ? `'${escapePS(u.ou)}'` : defaultOU}`,
+      `        Password    = '${escapePS(u.password)}'`,
       `    }${comma}`,
     ].join('\n');
   });
@@ -313,7 +329,7 @@ function generateBulkScript(users, domain, templateUser) {
     ``,
     `        # ── Copiar grupos do modelo ──────────────────────────────────`,
     `        try {`,
-    `            $Grupos = Get-ADPrincipalGroupMembership -Identity "${templateUser}" |`,
+    `            $Grupos = Get-ADPrincipalGroupMembership -Identity '${escapePS(templateUser)}' |`,
     `                        Where-Object { $_.Name -ne 'Domain Users' }`,
     `            foreach ($grupo in $Grupos) {`,
     `                try { Add-ADGroupMember -Identity $grupo.DistinguishedName -Members $u.Sam -ErrorAction Stop }`,
@@ -334,7 +350,7 @@ function generateBulkScript(users, domain, templateUser) {
     `        $OUFINAL = if ($u.OU) { $u.OU } else { ${defaultOU} }`,
     ``,
     `        New-ADUser \``,
-    `            -Name              "$($u.FullName)" \``,
+    `            -Name              $u.FullName \``,
     `            -GivenName         $u.FirstName \``,
     `            -Surname           $u.LastName \``,
     `            -SamAccountName    $u.Sam \``,
@@ -1377,7 +1393,11 @@ function createUserLeafRow(u, ouDn, filter) {
   const nameText = u.displayName || u.samAccountName;
   if (filter) {
     const esc = escapeRegex(filter);
-    nameEl.innerHTML = nameText.replace(new RegExp(`(${esc})`, 'gi'), '<mark>$1</mark>');
+    const regex = new RegExp(`(${esc})`, 'gi');
+    const parts = nameText.split(regex);
+    nameEl.innerHTML = parts.map((part, idx) => 
+      idx % 2 === 1 ? `<mark>${escapeHTML(part)}</mark>` : escapeHTML(part)
+    ).join('');
   } else {
     nameEl.textContent = nameText;
   }
@@ -2106,13 +2126,13 @@ function initUserSearch({
   }
 
   function hlText(text, term) {
-    if (!term || !text) return text;
+    if (!term || !text) return escapeHTML(text);
     const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     const tNorm = normalize(term);
     const txtNorm = normalize(text);
     const idx = txtNorm.indexOf(tNorm);
-    if (idx === -1) return text;
-    return text.substring(0, idx) + '<mark>' + text.substring(idx, idx + term.length) + '</mark>' + text.substring(idx + term.length);
+    if (idx === -1) return escapeHTML(text);
+    return escapeHTML(text.substring(0, idx)) + '<mark>' + escapeHTML(text.substring(idx, idx + term.length)) + '</mark>' + escapeHTML(text.substring(idx + term.length));
   }
 
   function filterUsers(term) {
