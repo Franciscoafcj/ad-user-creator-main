@@ -1,0 +1,6 @@
+# Arquivos de Dados Locais - NÃO COMITAR!
+ad-data.js
+
+# Arquivos de log/temp
+*.log
+*.tmp
