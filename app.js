@@ -2364,7 +2364,7 @@ initUserSearch({
 ═══════════════════════════════════════════════════════════════ */
 
 (function () {
-  const SERVER_PORT = 7510;
+  const SERVER_PORT = (window.APP_CONFIG && window.APP_CONFIG.serverPort) ? window.APP_CONFIG.serverPort : 7510;
   const SERVER_BASE = `http://localhost:${SERVER_PORT}`;
 
   let serverToken     = null;
@@ -2905,7 +2905,7 @@ function generateDisableScript({ sam, displayName, reason, moveOu, targetOu, exp
    Reutiliza o mesmo servidor Start-Server.ps1
 ═══════════════════════════════════════════════════════════════ */
 (function () {
-  const SERVER_PORT = 7510;
+  const SERVER_PORT = (window.APP_CONFIG && window.APP_CONFIG.serverPort) ? window.APP_CONFIG.serverPort : 7510;
   const SERVER_BASE = `http://localhost:${SERVER_PORT}`;
 
   const execBtn       = document.getElementById('executeDisableBtn');
@@ -3446,7 +3446,7 @@ function generateBulkDisableScript(users, reason, moveOu, targetOu, expirePasswo
    SERVIDOR LOCAL — Integração Em Lote (Desabilitar)
 ═══════════════════════════════════════════════════════════════ */
 (function () {
-  const SERVER_PORT = 7510;
+  const SERVER_PORT = (window.APP_CONFIG && window.APP_CONFIG.serverPort) ? window.APP_CONFIG.serverPort : 7510;
   const SERVER_BASE = `http://localhost:${SERVER_PORT}`;
 
   const execBtn     = document.getElementById('executeDisableBulkBtn');

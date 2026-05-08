@@ -35,6 +35,30 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# ── Carregar Configuração e Logs ────────────────────────────────────
+$LogDir = "logs"
+$configFile = Join-Path $PSScriptRoot "config.js"
+if (Test-Path $configFile) {
+    $content = Get-Content $configFile -Raw
+    if ($content -match '"serverPort"\s*:\s*(\d+)') {
+        if (-not $PSBoundParameters.ContainsKey('Port')) { $Port = [int]$matches[1] }
+    }
+    if ($content -match '"logDirectory"\s*:\s*"([^"]+)"') {
+        $LogDir = $matches[1]
+    }
+}
+
+$LogPath = Join-Path $PSScriptRoot $LogDir
+if (-not (Test-Path $LogPath)) { New-Item -ItemType Directory -Path $LogPath | Out-Null }
+$LogFile = Join-Path $LogPath "server-$(Get-Date -Format 'yyyy-MM-dd').log"
+
+function Write-Log {
+    param([string]$Message, [string]$Color = "White")
+    $timestamp = Get-Date -Format 'HH:mm:ss'
+    Write-Host "  $timestamp  $Message" -ForegroundColor $Color
+    Add-Content -Path $LogFile -Value "[$timestamp] $Message"
+}
+
 # ══════════════════════════════════════════════════════════════════
 # BANNER
 # ══════════════════════════════════════════════════════════════════
@@ -132,7 +156,7 @@ try {
         $path   = $req.Url.AbsolutePath.ToLower().TrimEnd('/')
         $method = $req.HttpMethod.ToUpper()
 
-        Write-Host "  $(Get-Date -Format 'HH:mm:ss')  $method $path" -ForegroundColor DarkGray
+        Write-Log "$method $path" "DarkGray"
 
         # ── CORS Seguro: Aceitar apenas origin "null" (file://) ou localhost ──
         $origin = $req.Headers['Origin']
@@ -206,7 +230,7 @@ try {
                 $tmpFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), $tmpName)
                 [System.IO.File]::WriteAllText($tmpFile, $scriptContent, [System.Text.Encoding]::UTF8)
 
-                Write-Host "    → Executando: $tmpFile" -ForegroundColor Yellow
+                Write-Log "    → Executando script: $(($scriptContent.Length)) caracteres recebidos" "Yellow"
 
                 # ── Configurar processo filho ──────────────────────────
                 $psi = [System.Diagnostics.ProcessStartInfo]::new()
@@ -266,7 +290,7 @@ try {
 
                 $success = $exitCode -eq 0
                 $color   = if ($success) { 'Green' } else { 'Red' }
-                Write-Host "    → Código de saída: $exitCode — $($allLines.Count) linha(s)" -ForegroundColor $color
+                Write-Log "    → Código de saída: $exitCode — $($allLines.Count) linha(s)" $color
 
                 Send-Json $ctx 200 @{
                     success  = $success
@@ -276,7 +300,7 @@ try {
 
             } catch {
                 $errMsg = $_.Exception.Message
-                Write-Host "    ❌ Erro: $errMsg" -ForegroundColor Red
+                Write-Log "    ❌ Erro: $errMsg" "Red"
 
                 Unregister-Event -SourceIdentifier $outJob.Name -ErrorAction SilentlyContinue
                 Unregister-Event -SourceIdentifier $errJob.Name -ErrorAction SilentlyContinue
