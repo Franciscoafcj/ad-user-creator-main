@@ -2539,30 +2539,39 @@ initUserSearch({
 
 /* ═══════════════════════════════════════════════════════════════
    TAB SWITCHING
-   Controla a visibilidade dos painéis principal e "Desabilitar"
+   Controla a visibilidade dos painéis: Criar / Desabilitar / Bloqueados
 ═══════════════════════════════════════════════════════════════ */
 (function () {
   const tabCreate  = document.getElementById('tabBtnCreate');
   const tabDisable = document.getElementById('tabBtnDisable');
+  const tabLocked  = document.getElementById('tabBtnLocked');
   const mainPanel  = document.querySelector('main.container');
   const disPanel   = document.getElementById('panelDisable');
+  const lockPanel  = document.getElementById('panelLocked');
+
+  const allTabs   = [tabCreate, tabDisable, tabLocked].filter(Boolean);
+  const allPanels = [mainPanel, disPanel, lockPanel].filter(Boolean);
 
   function showTab(name) {
+    allTabs.forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+    allPanels.forEach(p => { p.style.display = 'none'; });
+
     if (name === 'create') {
-      tabCreate.classList.add('active');  tabCreate.setAttribute('aria-selected', 'true');
-      tabDisable.classList.remove('active'); tabDisable.setAttribute('aria-selected', 'false');
-      mainPanel.style.display  = '';
-      disPanel.style.display   = 'none';
-    } else {
+      tabCreate.classList.add('active'); tabCreate.setAttribute('aria-selected', 'true');
+      if (mainPanel) mainPanel.style.display = '';
+    } else if (name === 'disable') {
       tabDisable.classList.add('active'); tabDisable.setAttribute('aria-selected', 'true');
-      tabCreate.classList.remove('active'); tabCreate.setAttribute('aria-selected', 'false');
-      mainPanel.style.display  = 'none';
-      disPanel.style.display   = '';
+      if (disPanel) disPanel.style.display = '';
+    } else if (name === 'locked') {
+      if (tabLocked) { tabLocked.classList.add('active'); tabLocked.setAttribute('aria-selected', 'true'); }
+      if (lockPanel) lockPanel.style.display = '';
+      if (window._lockedMonitorCheckNow) window._lockedMonitorCheckNow();
     }
   }
 
   tabCreate.addEventListener('click',  () => showTab('create'));
   tabDisable.addEventListener('click', () => showTab('disable'));
+  if (tabLocked) tabLocked.addEventListener('click', () => showTab('locked'));
 })();
 
 
@@ -3780,4 +3789,321 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
       tryInit();
     }
   }, 300);
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   MONITOR DE USUÁRIOS BLOQUEADOS
+   Polling a cada 60s via Start-Server.ps1 → Get-ADUser LockedOut
+   Botão Desbloquear executa Unlock-ADAccount via /api/run
+═══════════════════════════════════════════════════════════════ */
+(function LockedUsersMonitor() {
+  const SERVER_PORT   = (window.APP_CONFIG && window.APP_CONFIG.serverPort) ? window.APP_CONFIG.serverPort : 7510;
+  const SERVER_BASE   = 'http://localhost:' + SERVER_PORT;
+  const POLL_INTERVAL = 60;
+
+  const offlineBanner = document.getElementById('lockedOfflineBanner');
+  const statusBar     = document.getElementById('lockedStatusBar');
+  const statusDot     = document.getElementById('lockedStatusDot');
+  const statusText    = document.getElementById('lockedStatusText');
+  const lastCheckEl   = document.getElementById('lockedLastCheck');
+  const countdownEl   = document.getElementById('lockedCountdown');
+  const countdownWrap = document.getElementById('lockedCountdownWrap');
+  const checkNowBtn   = document.getElementById('lockedCheckNow');
+  const tableEl       = document.getElementById('lockedTable');
+  const tableBody     = document.getElementById('lockedTableBody');
+  const emptyEl       = document.getElementById('lockedEmpty');
+  const initialEl     = document.getElementById('lockedInitial');
+  const tabBadge      = document.getElementById('lockedTabBadge');
+  const termPanel     = document.getElementById('lockedTerminalPanel');
+  const termOut       = document.getElementById('lockedTerminalOutput');
+  const termSt        = document.getElementById('lockedTerminalStatus');
+  const termClearBtn  = document.getElementById('lockedTerminalClearBtn');
+
+  if (!tableEl) return;
+
+  let serverToken    = null;
+  let countdownTimer = null;
+  let secondsLeft    = POLL_INTERVAL;
+  let isChecking     = false;
+
+  const QUERY_SCRIPT = [
+    'Import-Module ActiveDirectory -ErrorAction Stop',
+    '$locked = Get-ADUser -Filter {LockedOut -eq $true} -Properties DisplayName,SamAccountName,LockedOut,BadLogonCount,LastBadPasswordAttempt,Department,Title,Enabled -ErrorAction Stop',
+    '$arr = @($locked | ForEach-Object {',
+    '    [PSCustomObject]@{',
+    '        sam        = $_.SamAccountName',
+    '        display    = if ($_.DisplayName) { $_.DisplayName } else { $_.SamAccountName }',
+    '        department = if ($_.Department)  { $_.Department  } else { "" }',
+    '        title      = if ($_.Title)       { $_.Title       } else { "" }',
+    '        badCount   = if ($_.BadLogonCount) { $_.BadLogonCount } else { 0 }',
+    '        lastBad    = if ($_.LastBadPasswordAttempt) { $_.LastBadPasswordAttempt.ToString("dd/MM/yyyy HH:mm:ss") } else { "" }',
+    '        enabled    = if ($_.Enabled -eq $true) { $true } else { $false }',
+    '    }',
+    '})',
+    'Write-Host ($arr | ConvertTo-Json -Depth 3 -Compress)',
+  ].join('\n');
+
+  function buildUnlockScript(sam) {
+    var e = sam.replace(/'/g, "''");
+    return [
+      'Import-Module ActiveDirectory -ErrorAction Stop',
+      'try {',
+      "    Unlock-ADAccount -Identity '" + e + "' -ErrorAction Stop",
+      "    Write-Host \"[OK] Conta '" + e + "' desbloqueada com sucesso!\"",
+      "    $u = Get-ADUser -Identity '" + e + "' -Properties LockedOut -ErrorAction SilentlyContinue",
+      '    if ($u -and -not $u.LockedOut) { Write-Host "   Verificado: conta agora desbloqueada." }',
+      '} catch {',
+      "    Write-Error \"[ERRO] Falha ao desbloquear '" + e + "': $_\"",
+      '    exit 1',
+      '}',
+    ].join('\n');
+  }
+
+  async function pingServer() {
+    try {
+      var ctrl  = new AbortController();
+      var timer = setTimeout(function() { ctrl.abort(); }, 1800);
+      var res   = await fetch(SERVER_BASE + '/api/ping', { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error();
+      var data  = await res.json();
+      serverToken = data.token;
+      return true;
+    } catch (_) { serverToken = null; return false; }
+  }
+
+  async function runScript(scriptContent) {
+    var online = await pingServer();
+    if (!online || !serverToken) return null;
+    var ctrl  = new AbortController();
+    var timer = setTimeout(function() { ctrl.abort(); }, 60000);
+    try {
+      var res = await fetch(SERVER_BASE + '/api/run', {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Server-Token': serverToken },
+        body   : JSON.stringify({ script: scriptContent }),
+        signal : ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (res.status === 401) { serverToken = null; return null; }
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (_) { clearTimeout(timer); return null; }
+  }
+
+  function setStatus(state, text) {
+    if (!statusBar) return;
+    statusBar.style.display = 'flex';
+    if (statusDot)  statusDot.className   = 'locked-status-dot locked-dot-' + state;
+    if (statusText) statusText.textContent = text;
+  }
+
+  function setTermStatus(type, text) {
+    if (!termSt) return;
+    termSt.textContent = text;
+    termSt.className   = 'terminal-status-badge terminal-st-' + type;
+  }
+
+  function addTermLine(text, hint) {
+    if (!termOut) return;
+    var div   = document.createElement('div');
+    div.className = 'tline';
+    var lower = (text || '').toLowerCase();
+    if (hint === 'error' || text.includes('[ERRO]') || lower.includes('falha') || lower.includes('error'))
+      div.classList.add('tl-error');
+    else if (text.includes('[OK]') || lower.includes('sucesso') || lower.includes('desbloqueada'))
+      div.classList.add('tl-success');
+    else if (text.includes('[AVISO]') || lower.includes('warning'))
+      div.classList.add('tl-warn');
+    else if (hint === 'info')
+      div.classList.add('tl-info');
+    div.textContent = text || '\u00a0';
+    termOut.appendChild(div);
+    termOut.scrollTop = termOut.scrollHeight;
+  }
+
+  function renderTable(users) {
+    var count = users.length;
+    if (tabBadge) { tabBadge.textContent = count; tabBadge.style.display = count > 0 ? 'inline-flex' : 'none'; }
+    if (initialEl) initialEl.style.display = 'none';
+
+    if (count === 0) {
+      if (tableEl) tableEl.style.display = 'none';
+      if (emptyEl) emptyEl.style.display = 'flex';
+      return;
+    }
+
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (tableEl) {
+      tableEl.style.display = '';
+      tableEl.classList.remove('locked-table-flash');
+      void tableEl.offsetWidth;
+      tableEl.classList.add('locked-table-flash');
+    }
+
+    tableBody.innerHTML = '';
+    users.forEach(function(u, i) {
+      var name    = u.display || u.sam || '';
+      var parts   = name.trim().split(/\s+/);
+      var initials = parts.length > 1
+        ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+        : name.slice(0, 2).toUpperCase();
+
+      var unlockIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>';
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="locked-td-num">' + (i + 1) + '</td>' +
+        '<td class="locked-td-user"><div class="locked-user-cell">' +
+          '<div class="locked-avatar">' + escapeHTML(initials) + '</div>' +
+          '<div><div class="locked-user-name">' + escapeHTML(name) + '</div>' +
+            (u.title ? '<div class="locked-user-title">' + escapeHTML(u.title) + '</div>' : '') +
+          '</div></div></td>' +
+        '<td><code class="locked-sam">' + escapeHTML(u.sam) + '</code></td>' +
+        '<td>' + (u.department ? escapeHTML(u.department) : '<span style="opacity:.4">—</span>') + '</td>' +
+        '<td class="locked-td-time">' + (u.lastBad ? escapeHTML(u.lastBad) : '<span style="opacity:.4">—</span>') + '</td>' +
+        '<td class="locked-td-count"><span class="locked-bad-count">' + (u.badCount || 0) + '</span></td>' +
+        '<td><button class="btn-unlock" data-sam="' + escapeHTML(u.sam) + '">' + unlockIcon + ' Desbloquear</button></td>';
+      tableBody.appendChild(tr);
+    });
+
+    tableBody.querySelectorAll('.btn-unlock').forEach(function(btn) {
+      btn.addEventListener('click', function() { unlockUser(btn.dataset.sam, btn); });
+    });
+  }
+
+  async function unlockUser(sam, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Aguarde...'; }
+    if (termPanel) termPanel.style.display = 'block';
+    if (termOut)   termOut.innerHTML = '';
+    setTermStatus('running', 'Desbloqueando...');
+    addTermLine('Desbloqueando conta: ' + sam, 'info');
+    if (termPanel) termPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    var result = await runScript(buildUnlockScript(sam));
+
+    if (!result) {
+      setTermStatus('error', 'Erro de comunicacao');
+      addTermLine('[ERRO] Servidor offline ou erro de comunicacao.', 'error');
+      showToast('Servidor offline.', '#ef4444');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg> Desbloquear';
+      }
+      return;
+    }
+
+    for (var i = 0; i < (result.lines || []).length; i++) {
+      addTermLine(result.lines[i]);
+      await new Promise(function(r) { setTimeout(r, 25); });
+    }
+
+    if (result.success) {
+      setTermStatus('success', 'Desbloqueado');
+      showToast(sam + ' desbloqueado com sucesso!');
+      var row = btn && btn.closest('tr');
+      if (row) {
+        row.classList.add('locked-row-fade');
+        setTimeout(function() {
+          row.remove();
+          var remaining = tableBody ? tableBody.querySelectorAll('tr').length : 0;
+          if (tabBadge) { tabBadge.textContent = remaining; tabBadge.style.display = remaining > 0 ? 'inline-flex' : 'none'; }
+          if (remaining === 0) { if (tableEl) tableEl.style.display = 'none'; if (emptyEl) emptyEl.style.display = 'flex'; }
+        }, 500);
+      }
+    } else {
+      setTermStatus('error', 'Falha');
+      showToast('Falha ao desbloquear ' + sam + '.', '#ef4444');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg> Desbloquear';
+      }
+    }
+  }
+
+  async function checkLockedUsers() {
+    if (isChecking) return;
+    isChecking = true;
+    if (checkNowBtn) checkNowBtn.disabled = true;
+    setStatus('checking', 'Verificando usuarios bloqueados...');
+
+    var online = await pingServer();
+
+    if (!online) {
+      if (offlineBanner) offlineBanner.style.display = 'flex';
+      if (countdownWrap) countdownWrap.style.display = 'none';
+      if (checkNowBtn)   checkNowBtn.disabled = true;
+      if (statusBar)     statusBar.style.display = 'none';
+      isChecking = false;
+      return;
+    }
+
+    if (offlineBanner) offlineBanner.style.display = 'none';
+    if (checkNowBtn)   checkNowBtn.disabled = false;
+    if (countdownWrap) countdownWrap.style.display = 'flex';
+
+    var result = await runScript(QUERY_SCRIPT);
+
+    if (!result) {
+      setStatus('error', 'Erro ao consultar o AD');
+      isChecking = false;
+      return;
+    }
+
+    var users = [];
+    try {
+      var jsonLine = (result.lines || []).find(function(l) {
+        var t = l.trim();
+        return t.startsWith('[') || t.startsWith('{');
+      });
+      if (jsonLine) {
+        var parsed = JSON.parse(jsonLine);
+        users = Array.isArray(parsed) ? parsed : [parsed];
+      }
+    } catch (_) { users = []; }
+
+    renderTable(users);
+    var now = new Date().toLocaleTimeString('pt-BR');
+    setStatus(users.length > 0 ? 'warn' : 'ok', users.length + ' usuario(s) bloqueado(s) encontrado(s)');
+    if (lastCheckEl) lastCheckEl.textContent = 'Ultima verificacao: ' + now;
+
+    resetCountdown();
+    isChecking = false;
+  }
+
+  function resetCountdown() {
+    clearInterval(countdownTimer);
+    secondsLeft = POLL_INTERVAL;
+    if (countdownEl) countdownEl.textContent = secondsLeft;
+    countdownTimer = setInterval(function() {
+      secondsLeft--;
+      if (countdownEl) countdownEl.textContent = Math.max(0, secondsLeft);
+      if (secondsLeft <= 0) { clearInterval(countdownTimer); checkLockedUsers(); }
+    }, 1000);
+  }
+
+  if (checkNowBtn) {
+    checkNowBtn.addEventListener('click', function() {
+      clearInterval(countdownTimer);
+      checkLockedUsers();
+    });
+  }
+
+  if (termClearBtn) {
+    termClearBtn.addEventListener('click', function() {
+      if (termOut)   termOut.innerHTML = '';
+      if (termPanel) termPanel.style.display = 'none';
+    });
+  }
+
+  window._lockedMonitorCheckNow = checkLockedUsers;
+
+  pingServer().then(function(online) {
+    if (online) {
+      if (offlineBanner) offlineBanner.style.display = 'none';
+      if (checkNowBtn)   checkNowBtn.disabled = false;
+    } else {
+      if (offlineBanner) offlineBanner.style.display = 'flex';
+    }
+  });
 })();

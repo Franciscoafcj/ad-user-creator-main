@@ -94,6 +94,14 @@
         </svg>
         Desabilitar Usuário
       </button>
+      <button class="tab-btn" id="tabBtnLocked" role="tab" aria-selected="false" aria-controls="panelLocked">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+        Bloqueados
+        <span class="locked-tab-badge" id="lockedTabBadge" style="display:none">0</span>
+      </button>
     </nav>
   </div>
 
@@ -1021,6 +1029,131 @@
 
     </div><!-- /container -->
   </div><!-- /panelDisable -->
+
+  <!-- ═══════════════════════════════════════════════════════
+       PAINEL: Usuários Bloqueados
+  ════════════════════════════════════════════════════════ -->
+  <div class="locked-panel" id="panelLocked" style="display:none">
+    <div class="container">
+
+      <!-- Header do painel -->
+      <div class="locked-panel-header">
+        <div class="locked-panel-title">
+          <div class="locked-panel-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <div>
+            <h2>Usuários Bloqueados na Rede</h2>
+            <p>Monitoramento automático a cada 60 segundos via Active Directory</p>
+          </div>
+        </div>
+        <div class="locked-panel-actions">
+          <div class="locked-countdown-wrap" id="lockedCountdownWrap" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            Próxima verificação em <span id="lockedCountdown">60</span>s
+          </div>
+          <button class="btn-check-now" id="lockedCheckNow" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="1 4 1 10 7 10"/>
+              <path d="M3.51 15a9 9 0 1 0 .49-4"/>
+            </svg>
+            Verificar agora
+          </button>
+        </div>
+      </div>
+
+      <!-- Banner offline -->
+      <div class="locked-offline-banner" id="lockedOfflineBanner" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <div>
+          <strong>Servidor offline</strong> — Execute <code>Start-Server.ps1</code> para ativar o monitoramento automático.
+        </div>
+      </div>
+
+      <!-- Status bar -->
+      <div class="locked-status-bar" id="lockedStatusBar" style="display:none">
+        <span class="locked-status-dot" id="lockedStatusDot"></span>
+        <span id="lockedStatusText">Aguardando primeira verificação...</span>
+        <span class="locked-status-time" id="lockedLastCheck"></span>
+      </div>
+
+      <!-- Tabela de bloqueados -->
+      <div class="locked-table-wrap" id="lockedTableWrap">
+
+        <!-- Estado vazio -->
+        <div class="locked-empty" id="lockedEmpty" style="display:none">
+          <div class="locked-empty-icon">
+            <svg viewBox="0 0 64 64" fill="none">
+              <rect x="8" y="28" width="48" height="30" rx="6" stroke="#10b981" stroke-width="2"/>
+              <path d="M20 28V20a12 12 0 0 1 24 0v8" stroke="#10b981" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="32" cy="43" r="3" fill="#10b981" opacity=".7"/>
+            </svg>
+          </div>
+          <p class="locked-empty-msg">Nenhum usuário bloqueado encontrado</p>
+          <p class="locked-empty-sub">Todos os usuários estão com acesso liberado na rede.</p>
+        </div>
+
+        <!-- Estado inicial (antes da 1ª verificação) -->
+        <div class="locked-initial" id="lockedInitial">
+          <div class="locked-initial-icon">
+            <svg viewBox="0 0 64 64" fill="none">
+              <rect x="8" y="28" width="48" height="30" rx="6" stroke="#6366f1" stroke-width="2" stroke-dasharray="4 3"/>
+              <path d="M20 28V20a12 12 0 0 1 24 0v8" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-dasharray="4 3"/>
+              <circle cx="12" cy="12" r="10" stroke="#6366f188" stroke-width="1.5" stroke-dasharray="3 2"/>
+              <polyline points="12 7 12 12 15 14" stroke="#6366f188" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <p class="locked-initial-msg">Monitoramento iniciará em breve</p>
+          <p class="locked-initial-sub">Conecte o servidor local para ativar a verificação automática.</p>
+        </div>
+
+        <!-- Tabela -->
+        <table class="locked-table" id="lockedTable" style="display:none">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Usuário</th>
+              <th>Login (SAM)</th>
+              <th>Departamento</th>
+              <th>Última tentativa inválida</th>
+              <th>Tentativas</th>
+              <th>Ação</th>
+            </tr>
+          </thead>
+          <tbody id="lockedTableBody">
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Terminal de desbloqueio -->
+      <div class="terminal-panel" id="lockedTerminalPanel" style="display:none">
+        <div class="terminal-header">
+          <div class="terminal-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+            </svg>
+            Terminal — Desbloqueio
+          </div>
+          <div class="terminal-header-right">
+            <span class="terminal-status-badge" id="lockedTerminalStatus"></span>
+            <button class="terminal-clear-btn" id="lockedTerminalClearBtn" title="Fechar terminal">✕</button>
+          </div>
+        </div>
+        <div class="terminal-output" id="lockedTerminalOutput"></div>
+      </div>
+
+    </div>
+  </div><!-- /panelLocked -->
 
  <footer class="footer">
     <span>AD User Creator · Orsegups Participações</span>
