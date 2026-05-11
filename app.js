@@ -3828,20 +3828,22 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
   let isChecking     = false;
 
   const QUERY_SCRIPT = [
+    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
     'Import-Module ActiveDirectory -ErrorAction Stop',
-    '$locked = Get-ADUser -Filter {LockedOut -eq $true} -Properties DisplayName,SamAccountName,LockedOut,BadLogonCount,LastBadPasswordAttempt,Department,Title,Enabled -ErrorAction Stop',
+    '$locked = @(Get-ADUser -Filter {LockedOut -eq $true} -Properties DisplayName,SamAccountName,LockedOut,BadLogonCount,LastBadPasswordAttempt,Department,Title,Enabled -ErrorAction Stop)',
     '$arr = @($locked | ForEach-Object {',
     '    [PSCustomObject]@{',
-    '        sam        = $_.SamAccountName',
-    '        display    = if ($_.DisplayName) { $_.DisplayName } else { $_.SamAccountName }',
-    '        department = if ($_.Department)  { $_.Department  } else { "" }',
-    '        title      = if ($_.Title)       { $_.Title       } else { "" }',
-    '        badCount   = if ($_.BadLogonCount) { $_.BadLogonCount } else { 0 }',
+    '        sam        = [string]$_.SamAccountName',
+    '        display    = if ($_.DisplayName) { [string]$_.DisplayName } else { [string]$_.SamAccountName }',
+    '        department = if ($_.Department)  { [string]$_.Department  } else { "" }',
+    '        title      = if ($_.Title)       { [string]$_.Title       } else { "" }',
+    '        badCount   = [int]$(if ($_.BadLogonCount) { $_.BadLogonCount } else { 0 })',
     '        lastBad    = if ($_.LastBadPasswordAttempt) { $_.LastBadPasswordAttempt.ToString("dd/MM/yyyy HH:mm:ss") } else { "" }',
-    '        enabled    = if ($_.Enabled -eq $true) { $true } else { $false }',
+    '        enabled    = ($_.Enabled -eq $true)',
     '    }',
     '})',
-    'Write-Host ($arr | ConvertTo-Json -Depth 3 -Compress)',
+    '$json = if ($arr.Count -eq 0) { "[]" } elseif ($arr.Count -eq 1) { "[" + ($arr[0] | ConvertTo-Json -Depth 2 -Compress) + "]" } else { $arr | ConvertTo-Json -Depth 2 -Compress }',
+    'Write-Output $json',
   ].join('\n');
 
   function buildUnlockScript(sam) {
