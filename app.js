@@ -210,9 +210,9 @@ function generateScript(u) {
     ...(templateUser ? [`# Modelo  : ${templateUser}`] : []),
     `# ================================================================`,
     ``,
-    `# Importa os módulos necessários`,
-    `Import-Module ActiveDirectory -ErrorAction Stop`,
-    `Import-Module Microsoft.PowerShell.Security -ErrorAction SilentlyContinue`,
+    `# Importa o módulo do Active Directory`,
+    `# -WarningAction SilentlyContinue suprime avisos inofensivos de TypeData (PS 5.1)`,
+    `Import-Module ActiveDirectory -ErrorAction Stop -WarningAction SilentlyContinue`,
     ``,
     `# ── Dados do Usuário ────────────────────────────────────────────`,
     `$FirstName    = '${escapePS(firstName)}'`,
@@ -224,6 +224,19 @@ function generateScript(u) {
     `$CPF          = '${escapePS(cpf11)}'         # CPF sem pontuação, 11 dígitos`,
     `$OU           = ${ou ? `'${escapePS(ou)}'` : `'OU=Usuarios,${dcParts}'`}`,
     `$Password     = ConvertTo-SecureString '${escapePS(password)}' -AsPlainText -Force`,
+    ``,
+    `# ── Verificar conflitos antes de criar ──────────────────────────`,
+    `$samExiste = Get-ADUser -Filter "SamAccountName -eq '$SamAccount'" -ErrorAction SilentlyContinue`,
+    `$upnExiste = Get-ADUser -Filter "UserPrincipalName -eq '$UPN'" -ErrorAction SilentlyContinue`,
+    ``,
+    `if ($samExiste) {`,
+    `    Write-Error "❌ O login '$SamAccount' já existe no AD. Altere o nome ou escolha outro login."`,
+    `    exit 1`,
+    `}`,
+    `if ($upnExiste) {`,
+    `    Write-Error "❌ O UPN '$UPN' já existe na floresta. Use um domínio ou sufixo diferente."`,
+    `    exit 1`,
+    `}`,
     ``,
     `# ── Criar Usuário ───────────────────────────────────────────────`,
     `try {`,
@@ -300,8 +313,8 @@ function generateBulkScript(users, domain, templateUser) {
     `# Total de usuários: ${users.length}`,
     `# ================================================================`,
     ``,
-    `Import-Module ActiveDirectory -ErrorAction Stop`,
-    `Import-Module Microsoft.PowerShell.Security -ErrorAction SilentlyContinue`,
+    `# -WarningAction SilentlyContinue suprime avisos inofensivos de TypeData (PS 5.1)`,
+    `Import-Module ActiveDirectory -ErrorAction Stop -WarningAction SilentlyContinue`,
     ``,
     `$usuarios = @(`,
   ];
@@ -345,8 +358,14 @@ function generateBulkScript(users, domain, templateUser) {
     `)`,
     ``,
     `foreach ($u in $usuarios) {`,
+    `    # Verificar conflitos antes de criar cada usuário`,
+    `    $samExiste = Get-ADUser -Filter "SamAccountName -eq '$($u.Sam)'" -ErrorAction SilentlyContinue`,
+    `    $upnExiste = Get-ADUser -Filter "UserPrincipalName -eq '$($u.Email)'" -ErrorAction SilentlyContinue`,
+    `    if ($samExiste) { Write-Warning "⚠ Login '$($u.Sam)' já existe — pulando."; continue }`,
+    `    if ($upnExiste) { Write-Warning "⚠ UPN '$($u.Email)' já existe na floresta — pulando."; continue }`,
+    ``,
     `    try {`,
-    `        $SecPw = ConvertTo-SecureString $u.Password -AsPlainText -Force`,
+    `        $SecPw   = ConvertTo-SecureString $u.Password -AsPlainText -Force`,
     `        $OUFINAL = if ($u.OU) { $u.OU } else { ${defaultOU} }`,
     ``,
     `        New-ADUser \``,
@@ -357,7 +376,7 @@ function generateBulkScript(users, domain, templateUser) {
     `            -UserPrincipalName $u.Email \``,
     `            -EmailAddress      $u.Email \``,
     `            -Description       $u.CPF \``,
-    `            -Path              $u.OU \``,
+    `            -Path              $OUFINAL \``,
     `            -AccountPassword   $SecPw \``,
     `            -Enabled           $true \``,
     `            -ChangePasswordAtLogon $true`,
@@ -775,25 +794,16 @@ function parseSmartImportText(text) {
 }
 
 /**
- * Gera senha individual: 3 letras do primeiro nome (capitalizadas) + "@" + 4 dígitos aleatórios.
- * Exemplo: "Francisco" → "Fra@5678" | "Haley" → "Hal@2391"
+ * Gera senha individual: "Senh@" + 4 dígitos aleatórios.
+ * Não pode conter parte do nome do usuário para não infringir a política de senhas do AD.
  */
-function generateSmartPassword(firstName) {
-  const letters = firstName
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')  // remove diacríticos
-    .replace(/[^a-zA-Z]/g, '')        // só letras
-    .slice(0, 3);
-
-  // Capitaliza: 1ª maiúscula, demais minúsculas; pad com 'x' se nome curtíssimo
-  const prefix = (letters.charAt(0).toUpperCase() + letters.slice(1).toLowerCase()).padEnd(3, 'x');
-
+function generateSmartPassword() {
   // 4 dígitos criptograficamente aleatórios
   const digits = Array.from(crypto.getRandomValues(new Uint8Array(4)))
     .map(b => b % 10)
     .join('');
 
-  return `${prefix}@${digits}`;
+  return `Senh@${digits}`;
 }
 
 /* ── Toggle do painel ── */
@@ -825,7 +835,7 @@ document.getElementById('smartImportConvertBtn').addEventListener('click', funct
   const csvLines = records.map(r => {
     const cpfClean = r.cpf.replace(/\D/g, '');
     const { first } = parseFullName(r.name);
-    const password  = generateSmartPassword(first || r.name);
+    const password  = generateSmartPassword();
     return `${r.name},${cpfClean || '00000000000'},${password}`;
   });
 
@@ -3826,11 +3836,12 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
   let countdownTimer = null;
   let secondsLeft    = POLL_INTERVAL;
   let isChecking     = false;
+  let allLockedUsers = [];
 
   const QUERY_SCRIPT = [
     '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
     'Import-Module ActiveDirectory -ErrorAction Stop',
-    '$locked = @(Get-ADUser -Filter {LockedOut -eq $true} -Properties DisplayName,SamAccountName,LockedOut,BadLogonCount,LastBadPasswordAttempt,Department,Title,Enabled -ErrorAction Stop)',
+    '$locked = @(Search-ADAccount -LockedOut -UsersOnly -ErrorAction Stop | Get-ADUser -Properties DisplayName,SamAccountName,LockedOut,BadLogonCount,LastBadPasswordAttempt,Department,Title,Enabled -ErrorAction Stop)',
     '$arr = @($locked | ForEach-Object {',
     '    [PSCustomObject]@{',
     '        sam        = [string]$_.SamAccountName',
@@ -4064,13 +4075,37 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
       }
     } catch (_) { users = []; }
 
-    renderTable(users);
-    var now = new Date().toLocaleTimeString('pt-BR');
-    setStatus(users.length > 0 ? 'warn' : 'ok', users.length + ' usuario(s) bloqueado(s) encontrado(s)');
-    if (lastCheckEl) lastCheckEl.textContent = 'Ultima verificacao: ' + now;
+    allLockedUsers = users;
+    applyLockedFilter();
 
     resetCountdown();
     isChecking = false;
+  }
+
+  function applyLockedFilter() {
+    let users = allLockedUsers;
+    const filterTodayEl = document.getElementById('lockedFilterToday');
+    if (filterTodayEl && filterTodayEl.checked) {
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const yyyy = now.getFullYear();
+      const prefix = dd + '/' + mm + '/' + yyyy;
+      
+      users = users.filter(function(u) {
+        return u.lastBad && u.lastBad.startsWith(prefix);
+      });
+    }
+
+    renderTable(users);
+    var nowStr = new Date().toLocaleTimeString('pt-BR');
+    setStatus(users.length > 0 ? 'warn' : 'ok', users.length + ' usuario(s) exibido(s) (' + allLockedUsers.length + ' total)');
+    if (lastCheckEl) lastCheckEl.textContent = 'Ultima verificacao: ' + nowStr;
+  }
+
+  const filterTodayEl = document.getElementById('lockedFilterToday');
+  if (filterTodayEl) {
+    filterTodayEl.addEventListener('change', applyLockedFilter);
   }
 
   function resetCountdown() {

@@ -465,8 +465,8 @@
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                   </svg>
                   Senha gerada automaticamente por usuário:
-                  <code>3 letras do nome + @ + 4 dígitos aleatórios</code>
-                  <span class="smart-pw-example">Ex: Fra@5678</span>
+                  <code>Senh@ + 4 dígitos aleatórios</code>
+                  <span class="smart-pw-example">Ex: Senh@5678</span>
                 </div>
                 <button type="button" class="btn-smart-convert" id="smartImportConvertBtn">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1050,7 +1050,14 @@
             <p>Monitoramento automático a cada 60 segundos via Active Directory</p>
           </div>
         </div>
-        <div class="locked-panel-actions">
+        <div class="locked-panel-actions" style="align-items: center; gap: 16px;">
+          <label class="toggle-row" style="margin:0; display:flex; align-items:center; gap:8px; cursor:pointer;" title="Mostrar apenas bloqueados hoje">
+            <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">Apenas de hoje</span>
+            <label class="switch" style="margin:0;">
+              <input type="checkbox" id="lockedFilterToday" />
+              <span class="slider"></span>
+            </label>
+          </label>
           <div class="locked-countdown-wrap" id="lockedCountdownWrap" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
               <circle cx="12" cy="12" r="10"/>

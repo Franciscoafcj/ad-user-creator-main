@@ -50,8 +50,9 @@ param(
 # ══════════════════════════════════════════════════════════════════
 # IMPORTAR MÓDULO
 # ══════════════════════════════════════════════════════════════════
+# Suprime avisos inofensivos de TypeData que ocorrem no PS 5.1 ao carregar o módulo AD
 try {
-    Import-Module ActiveDirectory -ErrorAction Stop
+    Import-Module ActiveDirectory -ErrorAction Stop -WarningAction SilentlyContinue
 } catch {
     Write-Error "Modulo ActiveDirectory nao encontrado. Execute em um servidor AD ou instale as RSAT tools."
     exit 1
@@ -173,9 +174,15 @@ function Criar-UsuarioAD {
 
     # ── Criar no AD ─────────────────────────────────────────────
     try {
-        # Verifica se usuario ja existe
+        # Verifica se login (SAM) já existe
         if (Get-ADUser -Filter "SamAccountName -eq '$Login'" -ErrorAction SilentlyContinue) {
             Write-Warning "Usuario '$Login' ja existe no AD. Pulando."
+            return
+        }
+
+        # Verifica se o UPN já existe em toda a floresta
+        if (Get-ADUser -Filter "UserPrincipalName -eq '$Email'" -ErrorAction SilentlyContinue) {
+            Write-Error "O UPN '$Email' ja existe na floresta do AD. Verifique o dominio ou use um sufixo UPN diferente."
             return
         }
 
