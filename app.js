@@ -213,6 +213,7 @@ function generateScript(u) {
     `# Importa o módulo do Active Directory`,
     `# -WarningAction SilentlyContinue suprime avisos inofensivos de TypeData (PS 5.1)`,
     `Import-Module ActiveDirectory -ErrorAction Stop -WarningAction SilentlyContinue`,
+    `Import-Module Microsoft.PowerShell.Security -ErrorAction SilentlyContinue`,
     ``,
     `# ── Dados do Usuário ────────────────────────────────────────────`,
     `$FirstName    = '${escapePS(firstName)}'`,
@@ -317,6 +318,7 @@ function generateBulkScript(users, domain, templateUser) {
     ``,
     `# -WarningAction SilentlyContinue suprime avisos inofensivos de TypeData (PS 5.1)`,
     `Import-Module ActiveDirectory -ErrorAction Stop -WarningAction SilentlyContinue`,
+    `Import-Module Microsoft.PowerShell.Security -ErrorAction SilentlyContinue`,
     ``,
     `$usuarios = @(`,
   ];

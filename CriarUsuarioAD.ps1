@@ -53,6 +53,7 @@ param(
 # Suprime avisos inofensivos de TypeData que ocorrem no PS 5.1 ao carregar o módulo AD
 try {
     Import-Module ActiveDirectory -ErrorAction Stop -WarningAction SilentlyContinue
+    Import-Module Microsoft.PowerShell.Security -ErrorAction SilentlyContinue
 } catch {
     Write-Error "Modulo ActiveDirectory nao encontrado. Execute em um servidor AD ou instale as RSAT tools."
     exit 1
