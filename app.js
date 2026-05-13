@@ -693,10 +693,7 @@ userForm.addEventListener('submit', function (e) {
     cpfError.textContent = 'CPF inválido.'; cpfInput.className = 'is-invalid'; valid = false;
   }
 
-  // Validate senha
-  if (!password || password.length < 6) {
-    pwHint.textContent = 'Mínimo 6 caracteres.'; pwHint.style.color = 'var(--danger)'; valid = false;
-  }
+  // Validação de senha removida a pedido do usuário
 
   if (!valid) return;
 
