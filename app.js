@@ -1864,45 +1864,54 @@ function guessOuIcon(name) {
 
 /** Ponto de entrada: inicializa a UI com base em window.AD_DATA */
 function initWithADData() {
-  const pill       = document.getElementById('statusPill');
-  const dot        = pill.querySelector('.dot');
-  const statusText = document.getElementById('statusText');
-  const banner     = document.getElementById('adBanner');
-  const bannerWarn = document.getElementById('adBannerWarn');
+  const speechBubble = document.getElementById('sysSpeechText');
+  const valStatus    = document.getElementById('sysValStatus');
+  const valDomain    = document.getElementById('sysValDomain');
+  const valUser      = document.getElementById('sysValUser');
+  const valOus       = document.getElementById('sysValOus');
+  const trayAdStatus = document.getElementById('trayAdStatus');
 
   if (!window.AD_DATA) {
     // ── Sem dados do AD ─────────────────────────────────────────
-    dot.style.background = '#f59e0b';
-    statusText.textContent = 'AD não conectado';
-    bannerWarn.style.display = 'block';
+    if (valStatus) valStatus.innerHTML = '<span class="status-dot dot-yellow"></span> AD Desconectado';
+    if (speechBubble) speechBubble.textContent = 'Active Directory offline. Execute o microserviço local (Start.bat) para buscar e sincronizar dados de domínio em tempo real!';
+    if (trayAdStatus) trayAdStatus.setAttribute('title', 'Active Directory: Desconectado');
     return;
   }
 
   const { domain, currentUser, ous, generatedAt } = window.AD_DATA;
 
-  // ── Status pill ─────────────────────────────────────────────
-  dot.style.background = '#10b981';
-  statusText.textContent = `AD: ${domain.dnsRoot}`;
+  // ── Atualiza o painel de status do sistema ─────────────────────
+  if (valStatus) {
+    valStatus.innerHTML = '<span class="status-dot dot-green"></span> Online';
+  }
+  if (valDomain) {
+    valDomain.textContent = domain.dnsRoot;
+  }
+  if (valUser && currentUser) {
+    valUser.textContent = domain.netBiosName + '\\' + currentUser.samAccountName;
+  }
+  if (valOus && ous) {
+    valOus.textContent = ous.length + ' OUs carregadas';
+  }
+  if (speechBubble && currentUser) {
+    const genDate = new Date(generatedAt);
+    const genFmt  = genDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    speechBubble.textContent = 'Conectado ao domínio ' + domain.dnsRoot + ' com sucesso! Operador logado: ' + (currentUser.displayName || currentUser.samAccountName) + '. Sincronizado às ' + genFmt + '.';
+  }
 
-  // ── Banner de conexão ────────────────────────────────────────
-  const genDate = new Date(generatedAt);
-  const genFmt  = genDate.toLocaleString('pt-BR', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  });
-  document.getElementById('adBannerSub').textContent =
-    `Dados exportados em ${genFmt} · ${domain.netBiosName}\\${currentUser.samAccountName}`;
-  document.getElementById('adBannerUser').innerHTML =
-    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ${domain.netBiosName}\\${currentUser.samAccountName}`;
-  document.getElementById('adBannerDomain').innerHTML =
-    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> ${domain.dnsRoot}`;
-  document.getElementById('adBannerOuCount').innerHTML =
-    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> ${ous.length} OUs`;
-  banner.style.display = 'block';
+  // ── Atualiza o System Tray ─────────────────────────────────────
+  if (trayAdStatus) {
+    trayAdStatus.setAttribute('title', 'Active Directory: Conectado (' + domain.dnsRoot + ')');
+    const trayAdKey = trayAdStatus.querySelector('.pixel-icon rect:nth-child(1)');
+    if (trayAdKey) trayAdKey.setAttribute('fill', '#00aa00'); // Fica verde
+  }
 
   // ── Pré-preencher campo de domínio ───────────────────────────
-  domainInput.value = domain.dnsRoot;
-  updateEmailAndSam();  // atualiza preview de e-mail/SAM
+  if (domainInput) {
+    domainInput.value = domain.dnsRoot;
+    updateEmailAndSam();  // atualiza preview de e-mail/SAM
+  }
 
   // ── Substituir árvore de OUs pela estrutura real do AD ───────
   if (ous && ous.length > 0) {
@@ -2616,9 +2625,17 @@ initUserSearch({
   const allTabs   = [tabCreate, tabDisable, tabLocked].filter(Boolean);
   const allPanels = [mainPanel, disPanel, lockPanel].filter(Boolean);
 
+  let currentTabName = 'create';
+
+  // ── Alternância de Abas ────────────────────────────────────────
   function showTab(name) {
+    currentTabName = name;
     allTabs.forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
     allPanels.forEach(p => { p.style.display = 'none'; });
+
+    // Se a janela estiver minimizada, restaura ao alternar
+    const win = document.getElementById('mainOSWindow');
+    if (win) win.style.display = 'flex';
 
     if (name === 'create') {
       tabCreate.classList.add('active'); tabCreate.setAttribute('aria-selected', 'true');
@@ -2633,9 +2650,204 @@ initUserSearch({
     }
   }
 
-  tabCreate.addEventListener('click',  () => showTab('create'));
-  tabDisable.addEventListener('click', () => showTab('disable'));
-  if (tabLocked) tabLocked.addEventListener('click', () => showTab('locked'));
+  tabCreate.addEventListener('click',  () => {
+    const win = document.getElementById('mainOSWindow');
+    if (currentTabName === 'create' && win && win.style.display !== 'none') {
+      win.style.display = 'none'; // Minimiza se clicar no app ativo
+    } else {
+      showTab('create');
+    }
+  });
+  
+  tabDisable.addEventListener('click', () => {
+    const win = document.getElementById('mainOSWindow');
+    if (currentTabName === 'disable' && win && win.style.display !== 'none') {
+      win.style.display = 'none';
+    } else {
+      showTab('disable');
+    }
+  });
+
+  if (tabLocked) {
+    tabLocked.addEventListener('click', () => {
+      const win = document.getElementById('mainOSWindow');
+      if (currentTabName === 'locked' && win && win.style.display !== 'none') {
+        win.style.display = 'none';
+      } else {
+        showTab('locked');
+      }
+    });
+  }
+
+  // ── Menu Iniciar e Itens ────────────────────────────────────────
+  const startBtn  = document.getElementById('startBtn');
+  const startMenu = document.getElementById('startMenu');
+
+  function toggleStartMenu(e) {
+    if (e) e.stopPropagation();
+    const isOpen = startMenu.style.display === 'flex';
+    startMenu.style.display = isOpen ? 'none' : 'flex';
+    startBtn.classList.toggle('active', !isOpen);
+  }
+
+  function closeStartMenu() {
+    startMenu.style.display = 'none';
+    startBtn.classList.remove('active');
+  }
+
+  startBtn.addEventListener('click', toggleStartMenu);
+  document.getElementById('menuBtnSystem')?.addEventListener('click', toggleStartMenu);
+
+  // Closes start menu when clicking outside
+  document.addEventListener('click', (e) => {
+    if (startMenu && !startMenu.contains(e.target) && e.target !== startBtn) {
+      closeStartMenu();
+    }
+  });
+
+  // Start Menu Tab Switching
+  document.getElementById('startItemCreate')?.addEventListener('click', () => { showTab('create'); closeStartMenu(); });
+  document.getElementById('startItemDisable')?.addEventListener('click', () => { showTab('disable'); closeStartMenu(); });
+  document.getElementById('startItemLocked')?.addEventListener('click', () => { showTab('locked'); closeStartMenu(); });
+
+  // ── Modais (Ajuda / Sobre) ──────────────────────────────────────
+  const docModal   = document.getElementById('docModal');
+  const aboutModal = document.getElementById('aboutModal');
+
+  function toggleModal(modal, open) {
+    if (modal) modal.style.display = open ? 'flex' : 'none';
+    closeStartMenu();
+  }
+
+  // Help Modal (Documentação)
+  document.getElementById('menuBtnDoc')?.addEventListener('click', () => toggleModal(docModal, true));
+  document.getElementById('startItemHelp')?.addEventListener('click', () => toggleModal(docModal, true));
+  document.getElementById('closeDocModal')?.addEventListener('click', () => toggleModal(docModal, false));
+  document.getElementById('confirmDocModalBtn')?.addEventListener('click', () => toggleModal(docModal, false));
+
+  // About Modal (Sobre)
+  document.getElementById('menuBtnAbout')?.addEventListener('click', () => toggleModal(aboutModal, true));
+  document.getElementById('startItemAbout')?.addEventListener('click', () => toggleModal(aboutModal, true));
+  document.getElementById('closeAboutModal')?.addEventListener('click', () => toggleModal(aboutModal, false));
+  document.getElementById('confirmAboutBtn')?.addEventListener('click', () => toggleModal(aboutModal, false));
+
+  // ── Controles da Janela Clássica ───────────────────────────────
+  const winMinimize = document.getElementById('winMinimizeBtn');
+  const winMaximize = document.getElementById('winMaximizeBtn');
+  const winClose    = document.getElementById('winCloseBtn');
+  const winOS       = document.getElementById('mainOSWindow');
+
+  winMinimize?.addEventListener('click', () => {
+    if (winOS) winOS.style.display = 'none'; // Esconde a janela (minimizar)
+  });
+
+  winMaximize?.addEventListener('click', () => {
+    if (winOS) winOS.classList.toggle('maximized');
+  });
+
+  winClose?.addEventListener('click', () => {
+    window._shutdownSystem();
+  });
+
+  // ── Relógio Digital da System Tray ──────────────────────────────
+  const clockEl = document.getElementById('trayClock');
+  function updateClock() {
+    if (!clockEl) return;
+    const now  = new Date();
+    let hours   = now.getHours();
+    let minutes = now.getMinutes();
+    let seconds = now.getSeconds();
+    
+    hours   = hours < 10 ? '0' + hours : hours;
+    minutes = minutes < 10 ? '0' + minutes : minutes;
+    seconds = seconds < 10 ? '0' + seconds : seconds;
+    
+    clockEl.textContent = hours + ':' + minutes + ':' + seconds;
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  // ── Sequência de Desligamento CRT ───────────────────────────────
+  window._shutdownSystem = function() {
+    closeStartMenu();
+    const shutdownScreen = document.getElementById('shutdownScreen');
+    const winOS = document.getElementById('mainOSWindow');
+    
+    if (winOS && shutdownScreen) {
+      // Aplica animação de colapso CRT na janela principal
+      winOS.classList.add('crt-collapse');
+      
+      // Abre a tela preta com a mensagem amber após o colapso
+      setTimeout(() => {
+        shutdownScreen.style.display = 'flex';
+        winOS.style.display = 'none';
+        winOS.classList.remove('crt-collapse');
+      }, 550);
+    }
+  };
+
+  // Botão desligar da barra de tarefas
+  document.getElementById('trayPowerBtn')?.addEventListener('click', window._shutdownSystem);
+  document.getElementById('startItemShutdown')?.addEventListener('click', window._shutdownSystem);
+
+  // ── Sequência de Boot / Reinício (Mock BIOS) ────────────────────
+  window._rebootSystem = function() {
+    const shutdownScreen = document.getElementById('shutdownScreen');
+    const winOS = document.getElementById('mainOSWindow');
+    
+    if (shutdownScreen && winOS) {
+      shutdownScreen.style.display = 'none';
+      
+      // Cria overlay de BIOS temporário
+      const bios = document.createElement('div');
+      bios.style.position = 'fixed';
+      bios.style.inset = '0';
+      bios.style.backgroundColor = '#000000';
+      bios.style.color = '#ffffff';
+      bios.style.fontFamily = 'monospace';
+      bios.style.fontSize = '12px';
+      bios.style.padding = '20px';
+      bios.style.zIndex = '1000000';
+      bios.style.lineHeight = '1.4';
+      document.body.appendChild(bios);
+
+      const logs = [
+        'AWARD SOFTWARE, INC. © 1999',
+        'PENTIUM III CPU at 500MHz',
+        'Memory Test: 128MB OK',
+        'Detecting IDE Primary Master ... QUANTUM FIREBALL 10.2GB',
+        'Detecting IDE Primary Slave  ... NONE',
+        'S.M.A.R.T. Capable and Status OK',
+        '==================================================',
+        'Booting system from C: drive...',
+        'Loading AD_USER_CREATOR.EXE ... OK',
+        'Loading network drivers ... OK',
+        'Establishing AD loopback tunnel ... OK',
+        'Starting retro graphics adapter ... OK',
+        '==================================================',
+        'Boot sequence completed successfully.'
+      ];
+
+      let idx = 0;
+      function printLine() {
+        if (idx < logs.length) {
+          const l = document.createElement('div');
+          l.textContent = logs[idx++];
+          bios.appendChild(l);
+          bios.scrollTop = bios.scrollHeight;
+          setTimeout(printLine, 80 + Math.random() * 100);
+        } else {
+          setTimeout(() => {
+            if (document.body.contains(bios)) document.body.removeChild(bios);
+            winOS.style.display = 'flex';
+            showTab('create');
+            showToast('Sistema reinicializado! ✓');
+          }, 600);
+        }
+      }
+      printLine();
+    }
+  };
 })();
 
 
