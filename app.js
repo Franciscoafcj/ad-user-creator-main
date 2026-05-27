@@ -741,6 +741,16 @@ userForm.addEventListener('submit', function (e) {
       <div class="s-val">${i.v}</div>
     </div>
   `).join('');
+  // Credenciais
+  const credText = `Nome: ${fullName}\nE-mail: ${email}\nSenha: ${password}`;
+  const credBox = document.getElementById('credentialsBox');
+  const credInput = document.getElementById('credentialsText');
+  if (credBox && credInput) {
+    credInput.value = credText;
+    credBox.style.display = 'block';
+    document.getElementById('copyCredentialsBtn')._text = credText;
+  }
+
   summaryEl.style.display = 'block';
 
   // Salva script para botões copiar/baixar
@@ -754,6 +764,9 @@ userForm.addEventListener('submit', function (e) {
 
 document.getElementById('copyScriptBtn').addEventListener('click', function () {
   if (this._script) copyText(this._script);
+});
+document.getElementById('copyCredentialsBtn').addEventListener('click', function () {
+  if (this._text) copyText(this._text);
 });
 document.getElementById('downloadBtn').addEventListener('click', function () {
   if (this._script) downloadPS1(this._script, this._filename || 'criar_usuario_ad.ps1');
@@ -795,16 +808,18 @@ function parseSmartImportText(text) {
 }
 
 /**
- * Gera senha individual: "Senh@" + 4 dígitos aleatórios.
- * Não pode conter parte do nome do usuário para não infringir a política de senhas do AD.
+ * Gera senha individual: Primeiros 3 dígitos do nome + "@" + 4 dígitos aleatórios.
  */
-function generateSmartPassword() {
+function generateSmartPassword(firstName) {
   // 4 dígitos criptograficamente aleatórios
   const digits = Array.from(crypto.getRandomValues(new Uint8Array(4)))
     .map(b => b % 10)
     .join('');
 
-  return `Senh@${digits}`;
+  const prefix = normalizeStr(firstName).substring(0, 3);
+  const capitalizedPrefix = prefix.charAt(0).toUpperCase() + prefix.slice(1).toLowerCase();
+
+  return `${capitalizedPrefix}@${digits}`;
 }
 
 /* ── Toggle do painel ── */
@@ -836,7 +851,7 @@ document.getElementById('smartImportConvertBtn').addEventListener('click', funct
   const csvLines = records.map(r => {
     const cpfClean = r.cpf.replace(/\D/g, '');
     const { first } = parseFullName(r.name);
-    const password  = generateSmartPassword();
+    const password  = generateSmartPassword(first);
     return `${r.name},${cpfClean || '00000000000'},${password}`;
   });
 
@@ -1093,6 +1108,18 @@ document.getElementById('bulkBtn').addEventListener('click', function () {
   document.getElementById('downloadBulkBtn')._script   = script;
   document.getElementById('downloadBulkBtn')._filename = 'criar_usuarios_lote.ps1';
 
+  // Credenciais em Lote
+  const bulkCredText = _bulkParsedUsers.map(u => 
+    `Nome: ${u.fullName}\nE-mail: ${u.email}\nSenha: ${u.password}\n-------------------------`
+  ).join('\n');
+  const bulkCredBox = document.getElementById('bulkCredentialsBox');
+  const bulkCredInput = document.getElementById('bulkCredentialsText');
+  if (bulkCredBox && bulkCredInput) {
+    bulkCredInput.value = bulkCredText;
+    bulkCredBox.style.display = 'block';
+    document.getElementById('copyBulkCredentialsBtn')._text = bulkCredText;
+  }
+
   // Oculta preview após gerar
   document.getElementById('bulkPreviewArea').style.display = 'none';
 
@@ -1101,6 +1128,9 @@ document.getElementById('bulkBtn').addEventListener('click', function () {
 
 document.getElementById('copyBulkBtn').addEventListener('click', function () {
   if (this._script) copyText(this._script);
+});
+document.getElementById('copyBulkCredentialsBtn').addEventListener('click', function () {
+  if (this._text) copyText(this._text);
 });
 document.getElementById('downloadBulkBtn').addEventListener('click', function () {
   if (this._script) downloadPS1(this._script, this._filename || 'criar_usuarios_lote.ps1');

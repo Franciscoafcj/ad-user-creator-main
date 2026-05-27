@@ -357,6 +357,21 @@
           <div class="summary-grid" id="summaryGrid"></div>
         </div>
 
+        <!-- Credenciais -->
+        <div class="credentials-box" id="credentialsBox" style="display:none; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <h3 style="margin: 0; font-size: 14px; color: var(--text-muted);">Credenciais</h3>
+            <button class="btn-sm" id="copyCredentialsBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              Copiar
+            </button>
+          </div>
+          <textarea id="credentialsText" readonly style="width: 100%; height: 80px; resize: vertical; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 8px; font-family: monospace;"></textarea>
+        </div>
+
         <!-- Terminal de Execução -->
         <div class="terminal-panel" id="terminalPanel" style="display:none">
           <div class="terminal-header">
@@ -465,8 +480,8 @@
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                   </svg>
                   Senha gerada automaticamente por usuário:
-                  <code>Senh@ + 4 dígitos aleatórios</code>
-                  <span class="smart-pw-example">Ex: Senh@5678</span>
+                  <code>(Primeiros 3 dígitos do nome)@ + 4 dígitos aleatórios</code>
+                  <span class="smart-pw-example">Ex: Fra@5678</span>
                 </div>
                 <button type="button" class="btn-smart-convert" id="smartImportConvertBtn">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -604,8 +619,21 @@
             </div>
             <pre id="bulkOutput" style="display:none"><code id="bulkCode"></code></pre>
           </div>
-          <div class="bulk-output-actions" id="bulkOutputActions" style="display:none">
-            <button class="btn-sm" id="copyBulkBtn">Copiar</button>
+          <div class="credentials-box" id="bulkCredentialsBox" style="display:none; margin-top: 15px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <h3 style="margin: 0; font-size: 14px; color: var(--text-muted);">Credenciais (Lote)</h3>
+              <button class="btn-sm" id="copyBulkCredentialsBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+                Copiar
+              </button>
+            </div>
+            <textarea id="bulkCredentialsText" readonly style="width: 100%; height: 120px; resize: vertical; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 8px; font-family: monospace;"></textarea>
+          </div>
+          <div class="bulk-output-actions" id="bulkOutputActions" style="display:none; margin-top: 15px;">
+            <button class="btn-sm" id="copyBulkBtn">Copiar Script</button>
             <button class="btn-sm btn-download" id="downloadBulkBtn">Baixar .ps1</button>
           </div>
         </div>
