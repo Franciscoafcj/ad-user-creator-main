@@ -44,6 +44,22 @@ svg {
   flex-shrink: 0;
 }
 
+/* ── PIXEL-ART SVG ICONS — renderização nítida em tamanho maior ── */
+.pixel-icon {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  shape-rendering: crispEdges;
+  width: 20px !important;
+  height: 20px !important;
+}
+
+/* ── CLEAN VECTOR ICONS (Feather/Lucide style) ── */
+.task-icon {
+  width: 18px !important;
+  height: 18px !important;
+  flex-shrink: 0;
+}
+
 /* Tamanhos de SVGs específicos */
 .titlebar-icon {
   width: 16px !important;
@@ -61,13 +77,17 @@ svg {
 }
 
 .shutdown-btn-power svg {
-  width: 32px !important;
-  height: 32px !important;
+  width: 40px !important;
+  height: 40px !important;
+  image-rendering: pixelated;
+  shape-rendering: crispEdges;
 }
 
 .tray-power-btn svg {
-  width: 12px !important;
-  height: 12px !important;
+  width: 14px !important;
+  height: 14px !important;
+  image-rendering: pixelated;
+  shape-rendering: crispEdges;
 }
 
 /* ── RESET UNIVERSAL E ESTRUTURA BASE ──────────────────────────── */
@@ -83,7 +103,6 @@ body {
   background: radial-gradient(circle at center, #1b2620 0%, #080b09 100%);
   min-height: 100vh;
   overflow: hidden;
-  image-rendering: pixelated;
   user-select: none;
 }
 
@@ -2100,9 +2119,16 @@ pre {
   font-weight: bold;
 }
 
-/* Glitch / Color offset nas imagens da barra KIM */
-.task-app-btn svg, .tray-power-btn svg {
-  filter: drop-shadow(-1.5px -0.5px 0px #ff0055) drop-shadow(1.5px 0.5px 0px #00e5ff);
+/* Glitch / Color offset nas imagens da barra KIM — deslocamento menor para não borrar */
+.task-app-btn .task-icon, .tray-power-btn svg {
+  filter: drop-shadow(-1px 0px 0px #ff005566) drop-shadow(1px 0px 0px #00e5ff66);
+  transition: filter var(--transition);
+}
+.task-app-btn:hover .task-icon {
+  filter: drop-shadow(-1px 0px 0px #ff005599) drop-shadow(1px 0px 0px #00e5ff99);
+}
+.task-app-btn.active .task-icon {
+  filter: drop-shadow(-1px 0px 0px #ff0055bb) drop-shadow(1px 0px 0px #00e5ffbb);
 }
 
 .task-app-btn:hover {

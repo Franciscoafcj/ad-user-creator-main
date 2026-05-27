@@ -24,13 +24,12 @@
       <!-- Barra de Título 3D Clássica -->
       <div class="window-titlebar">
         <div class="titlebar-left">
-          <!-- Mini pixel-art do AD -->
-          <svg class="titlebar-icon pixel-icon" viewBox="0 0 16 16" width="16" height="16">
-            <rect x="2" y="2" width="12" height="12" fill="#000080" />
-            <rect x="3" y="3" width="10" height="10" fill="#c0c0c0" />
-            <rect x="4" y="4" width="8" height="8" fill="#000080" />
-            <rect x="6" y="5" width="4" height="2" fill="#ffffff" />
-            <rect x="7" y="6" width="2" height="4" fill="#ffffff" />
+          <!-- Ícone AD clean -->
+          <svg class="titlebar-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="8" r="4"/>
+            <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+            <line x1="19" y1="5" x2="23" y2="5"/>
+            <line x1="21" y1="3" x2="21" y2="7"/>
           </svg>
           <span class="titlebar-title">AD_USER_CREATOR.EXE</span>
         </div>
@@ -1313,9 +1312,9 @@
       <div class="shutdown-text">Seu computador já pode ser desligado com segurança.</div>
       <div class="shutdown-sub">Ou clique no botão abaixo para reinicializar o AD_USER_CREATOR.EXE</div>
       <div class="shutdown-btn-power">
-        <svg class="pixel-icon" viewBox="0 0 16 16" width="32" height="32" style="cursor:pointer;" onclick="window._rebootSystem()">
-          <circle cx="8" cy="8" r="5" fill="none" stroke="#ff5555" stroke-width="2" />
-          <rect x="7" y="2" width="2" height="6" fill="#ff5555" />
+        <svg class="task-icon" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="#ff5555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;" onclick="window._rebootSystem()">
+          <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+          <line x1="12" y1="2" x2="12" y2="12"/>
         </svg>
       </div>
     </div>
@@ -1329,13 +1328,12 @@
     <!-- Botão Iniciar -->
     <div class="start-btn-wrap">
       <button class="start-btn" id="startBtn">
-        <!-- Ícone Iniciar pixel-art -->
-        <svg class="pixel-icon" viewBox="0 0 16 16" width="16" height="16">
-          <rect x="1" y="1" width="14" height="14" fill="#000080" />
-          <rect x="2" y="2" width="12" height="12" fill="#c0c0c0" />
-          <rect x="4" y="4" width="8" height="8" fill="#000080" />
-          <rect x="6" y="5" width="4" height="2" fill="#ffffff" />
-          <rect x="7" y="6" width="2" height="4" fill="#ffffff" />
+        <!-- Ícone Iniciar clean (grid 2x2) -->
+        <svg class="task-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <rect x="3" y="3" width="8" height="8" rx="1.5"/>
+          <rect x="13" y="3" width="8" height="8" rx="1.5"/>
+          <rect x="3" y="13" width="8" height="8" rx="1.5"/>
+          <rect x="13" y="13" width="8" height="8" rx="1.5"/>
         </svg>
         <span>Iniciar</span>
       </button>
@@ -1347,35 +1345,30 @@
         </div>
         <div class="start-menu-items">
           <div class="start-item" id="startItemCreate">
-            <!-- Ícone Criar pixel-art -->
-            <svg class="pixel-icon" viewBox="0 0 16 16" width="16" height="16">
-              <rect x="6" y="2" width="4" height="4" fill="#1a1a1a" />
-              <rect x="4" y="6" width="8" height="3" fill="#1a1a1a" />
-              <rect x="5" y="9" width="6" height="5" fill="#0000aa" />
-              <rect x="11" y="9" width="5" height="1" fill="#00aa00" />
-              <rect x="13" y="7" width="1" height="5" fill="#00aa00" />
+            <svg class="task-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <line x1="19" y1="8" x2="19" y2="14"/>
+              <line x1="16" y1="11" x2="22" y2="11"/>
             </svg>
             Criar Usuário
           </div>
           <div class="start-item" id="startItemDisable">
-            <!-- Ícone Desabilitar pixel-art -->
-            <svg class="pixel-icon" viewBox="0 0 16 16" width="16" height="16">
-              <rect x="6" y="2" width="4" height="4" fill="#555555" />
-              <rect x="4" y="6" width="8" height="3" fill="#555555" />
-              <rect x="5" y="9" width="6" height="5" fill="#555555" />
-              <rect x="11" y="9" width="5" height="2" fill="#aa0000" />
+            <!-- Ícone Desabilitar clean -->
+            <svg class="task-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <line x1="17" y1="11" x2="23" y2="17"/>
+              <line x1="23" y1="11" x2="17" y2="17"/>
             </svg>
             Desabilitar Usuário
           </div>
           <div class="start-item" id="startItemLocked">
-            <!-- Ícone Bloqueados pixel-art -->
-            <svg class="pixel-icon" viewBox="0 0 16 16" width="16" height="16">
-              <rect x="6" y="2" width="4" height="1" fill="#555555" />
-              <rect x="5" y="3" width="1" height="3" fill="#555555" />
-              <rect x="10" y="3" width="1" height="3" fill="#555555" />
-              <rect x="4" y="6" width="8" height="7" fill="#aaaa00" />
-              <rect x="3" y="7" width="10" height="5" fill="#ffff55" />
-              <rect x="7" y="8" width="2" height="3" fill="#1a1a1a" />
+            <!-- Ícone Bloqueados clean -->
+            <svg class="task-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              <circle cx="12" cy="16" r="1" fill="currentColor" stroke="none"/>
             </svg>
             Bloqueados
           </div>
@@ -1391,20 +1384,20 @@
             Ajuda & Segurança (ISO)
           </div>
           <div class="start-item" id="startItemAbout">
-            <!-- Ícone Info pixel-art -->
-            <svg class="pixel-icon" viewBox="0 0 16 16" width="16" height="16">
-              <circle cx="8" cy="8" r="6" fill="#00aaaa" stroke="#1a1a1a" stroke-width="1.5" />
-              <rect x="7" y="4" width="2" height="2" fill="#ffffff" />
-              <rect x="7" y="7" width="2" height="5" fill="#ffffff" />
+            <!-- Ícone Info clean -->
+            <svg class="task-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
             </svg>
             Sobre o Sistema
           </div>
           <div class="start-divider"></div>
           <div class="start-item" id="startItemShutdown" style="color: #aa0000; font-weight: bold;">
-            <!-- Ícone Shutdown pixel-art -->
-            <svg class="pixel-icon" viewBox="0 0 16 16" width="16" height="16">
-              <circle cx="8" cy="8" r="5" fill="none" stroke="#aa0000" stroke-width="2" />
-              <rect x="7" y="2" width="2" height="6" fill="#aa0000" />
+            <!-- Ícone Shutdown clean -->
+            <svg class="task-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#aa0000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+              <line x1="12" y1="2" x2="12" y2="12"/>
             </svg>
             Desligar...
           </div>
@@ -1415,35 +1408,31 @@
     <!-- Botões das Abas (Active Tasks) -->
     <div class="taskbar-apps" role="tablist">
       <button class="task-app-btn active" id="tabBtnCreate" role="tab" aria-selected="true" aria-controls="panelCreate">
-        <!-- Ícone Criar pixel-art -->
-        <svg class="pixel-icon" viewBox="0 0 16 16" width="16" height="16">
-          <rect x="6" y="2" width="4" height="4" fill="#1a1a1a" />
-          <rect x="4" y="6" width="8" height="3" fill="#1a1a1a" />
-          <rect x="5" y="9" width="6" height="5" fill="#0000aa" />
-          <rect x="11" y="9" width="5" height="1" fill="#00aa00" />
-          <rect x="13" y="7" width="1" height="5" fill="#00aa00" />
+        <!-- Ícone Criar Usuário clean -->
+        <svg class="task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <line x1="19" y1="8" x2="19" y2="14"/>
+          <line x1="16" y1="11" x2="22" y2="11"/>
         </svg>
         <span>Criar Usuário</span>
       </button>
       <button class="task-app-btn" id="tabBtnDisable" role="tab" aria-selected="false" aria-controls="panelDisable">
-        <!-- Ícone Desabilitar pixel-art -->
-        <svg class="pixel-icon" viewBox="0 0 16 16" width="16" height="16">
-          <rect x="6" y="2" width="4" height="4" fill="#1a1a1a" />
-          <rect x="4" y="6" width="8" height="3" fill="#1a1a1a" />
-          <rect x="5" y="9" width="6" height="5" fill="#555555" />
-          <rect x="11" y="9" width="5" height="2" fill="#aa0000" />
+        <!-- Ícone Desabilitar Usuário clean -->
+        <svg class="task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <line x1="17" y1="11" x2="23" y2="17"/>
+          <line x1="23" y1="11" x2="17" y2="17"/>
         </svg>
         <span>Desabilitar Usuário</span>
       </button>
       <button class="task-app-btn" id="tabBtnLocked" role="tab" aria-selected="false" aria-controls="panelLocked">
-        <!-- Ícone Bloqueados pixel-art -->
-        <svg class="pixel-icon" viewBox="0 0 16 16" width="16" height="16">
-          <rect x="6" y="2" width="4" height="1" fill="#555555" />
-          <rect x="5" y="3" width="1" height="3" fill="#555555" />
-          <rect x="10" y="3" width="1" height="3" fill="#555555" />
-          <rect x="4" y="6" width="8" height="7" fill="#aaaa00" />
-          <rect x="3" y="7" width="10" height="5" fill="#ffff55" />
-          <rect x="7" y="8" width="2" height="3" fill="#1a1a1a" />
+        <!-- Ícone Bloqueados clean -->
+        <svg class="task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          <circle cx="12" cy="16" r="1" fill="currentColor" stroke="none"/>
         </svg>
         <span>Bloqueados</span>
         <span class="locked-tab-badge" id="lockedTabBadge" style="display:none">0</span>
@@ -1453,20 +1442,18 @@
     <!-- System Tray (Canto Direito) -->
     <div class="taskbar-tray border-inset">
       <div class="tray-icon" id="trayServerStatus" title="Servidor Local: Conectando...">
-        <svg class="pixel-icon" viewBox="0 0 16 16" width="14" height="14">
-          <rect x="4" y="2" width="8" height="4" fill="#555555" />
-          <rect x="6" y="6" width="4" height="4" fill="#aaaaaa" />
-          <rect x="7" y="10" width="2" height="4" fill="#555555" />
-          <rect x="6" y="3" width="4" height="2" id="trayServerDot" fill="#aa0000" />
+        <!-- Servidor: ícone de servidor/monitor clean -->
+        <svg class="task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <line x1="8" y1="21" x2="16" y2="21"/>
+          <line x1="12" y1="17" x2="12" y2="21"/>
+          <circle cx="18" cy="7" r="2" id="trayServerDot" fill="#aa0000" stroke="none"/>
         </svg>
       </div>
       <div class="tray-icon" id="trayAdStatus" title="Active Directory: Desconectado">
-        <svg class="pixel-icon" viewBox="0 0 16 16" width="14" height="14">
-          <rect x="5" y="2" width="6" height="6" fill="#aaaa00" />
-          <rect x="7" y="4" width="2" height="2" fill="#ffffff" />
-          <rect x="7" y="8" width="2" height="6" fill="#aaaaaa" />
-          <rect x="9" y="9" width="3" height="2" fill="#aaaaaa" />
-          <rect x="9" y="12" width="2" height="2" fill="#aaaaaa" />
+        <!-- AD: ícone de shield/escudo clean -->
+        <svg class="task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
         </svg>
       </div>
       <div class="tray-divider"></div>
