@@ -1,0 +1,7 @@
+{
+  "serverPort"    : 7510,
+  "dominioEmail"  : "orsegups.com.br",
+  "ouPadrao"      : "",
+  "logDirectory"  : "logs",
+  "abrirNavegador": true
+}
