@@ -2394,8 +2394,6 @@ initUserSearch({
   let serverAvailable = false;
 
   const executeBtnEl  = document.getElementById('executeBtn');
-  const serverPillEl  = document.getElementById('serverPill');
-  const serverPillTxt = document.getElementById('serverPillText');
   const terminalPanel = document.getElementById('terminalPanel');
   const terminalOut   = document.getElementById('terminalOutput');
   const terminalSt    = document.getElementById('terminalStatus');
@@ -2446,14 +2444,18 @@ initUserSearch({
 
   /* ── Atualiza indicador visual do servidor ── */
   function setServerIndicator(online, user, isAdmin) {
-    if (serverPillEl) {
-      serverPillEl.className = online ? 'server-pill server-pill-on' : 'server-pill server-pill-off';
+    // Dashboard retrô — atualiza a linha "Servidor Local"
+    const sysValServer = document.getElementById('sysValServer');
+    if (sysValServer) {
+      if (online) {
+        const adminTag = isAdmin ? ' (Admin)' : '';
+        sysValServer.innerHTML = `<span class="status-dot dot-green"></span> Online${adminTag}`;
+      } else {
+        sysValServer.innerHTML = '<span class="status-dot dot-red"></span> Offline';
+      }
     }
-    if (serverPillTxt) {
-      serverPillTxt.textContent = online
-        ? `Servidor${isAdmin ? ' (Admin)' : ''}`
-        : 'Servidor offline';
-    }
+
+    // Botão "Executar" na aba individual
     if (executeBtnEl) {
       executeBtnEl.style.display = online ? 'flex' : 'none';
       executeBtnEl.title = online
