@@ -37,7 +37,7 @@
 #>
 
 param(
-    [ValidateSet('interativo','lote')]
+    [ValidateSet('interativo', 'lote')]
     [string]$Modo = 'interativo',
 
     [string]$CaminhoCSV,
@@ -54,7 +54,8 @@ param(
 try {
     Import-Module ActiveDirectory -ErrorAction Stop -WarningAction SilentlyContinue
     Import-Module Microsoft.PowerShell.Security -ErrorAction SilentlyContinue
-} catch {
+}
+catch {
     Write-Error "Modulo ActiveDirectory nao encontrado. Execute em um servidor AD ou instale as RSAT tools."
     exit 1
 }
@@ -78,7 +79,7 @@ function Remove-Acentos {
 
 function Formatar-Login {
     param([string]$Nome, [string]$Sobrenome)
-    $n = (Remove-Acentos $Nome).ToLower()     -replace '[^a-z0-9\.\-_]', ''
+    $n = (Remove-Acentos $Nome).ToLower() -replace '[^a-z0-9\.\-_]', ''
     $s = (Remove-Acentos $Sobrenome).ToLower() -replace '[^a-z0-9\.\-_]', ''
     return "$n.$s"
 }
@@ -138,11 +139,11 @@ function Criar-UsuarioAD {
         [Parameter(Mandatory)][string]$Sobrenome,
         [Parameter(Mandatory)][string]$CPF,
         [string]$Departamento = '',
-        [string]$Cargo        = '',
-        [string]$OU           = $null,
+        [string]$Cargo = '',
+        [string]$OU = $null,
         [Parameter(Mandatory)][string]$SenhaTexto,
-        [bool]$TrocarSenha    = $true,
-        [bool]$Habilitado     = $true
+        [bool]$TrocarSenha = $true,
+        [bool]$Habilitado = $true
     )
 
     # ── Normalizar CPF ───────────────────────────────────────────
@@ -160,8 +161,8 @@ function Criar-UsuarioAD {
 
     # ── Gerar Login e E-mail ─────────────────────────────────────
     $NomeCompleto = "$Nome $Sobrenome"
-    $Login        = Formatar-Login $Nome $Sobrenome
-    $Email        = "$Login@$DominioEmail"
+    $Login = Formatar-Login $Nome $Sobrenome
+    $Email = "$Login@$DominioEmail"
 
     # ── Definir OU ───────────────────────────────────────────────
     $OUFinal = if ($OU) { $OU } elseif ($OUPadrao) { $OUPadrao } else {
@@ -212,7 +213,8 @@ function Criar-UsuarioAD {
         if ($Departamento) { Write-Host "     Depto   : $Departamento" }
         Write-Host ""
 
-    } catch {
+    }
+    catch {
         Write-Error "ERRO ao criar '$NomeCompleto': $($_.Exception.Message)"
     }
 }
@@ -229,15 +231,15 @@ if ($Modo -eq 'interativo') {
     Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Cyan
     Write-Host ""
 
-    $Nome         = Read-Host "Nome"
-    $Sobrenome    = Read-Host "Sobrenome"
-    $CPFInput     = Read-Host "CPF (com ou sem pontuacao)"
+    $Nome = Read-Host "Nome"
+    $Sobrenome = Read-Host "Sobrenome"
+    $CPFInput = Read-Host "CPF (com ou sem pontuacao)"
     $Departamento = Read-Host "Departamento (Enter para pular)"
-    $Cargo        = Read-Host "Cargo (Enter para pular)"
-    $OUInput      = Read-Host "OU (Enter para usar padrao)"
-    $Senha        = Read-Host "Senha inicial" -AsSecureString
-    $SenhaTexto   = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
-                        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Senha))
+    $Cargo = Read-Host "Cargo (Enter para pular)"
+    $OUInput = Read-Host "OU (Enter para usar padrao)"
+    $Senha = Read-Host "Senha inicial" -AsSecureString
+    $SenhaTexto = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Senha))
 
     $TrocarOpt = Read-Host "Forcar troca de senha no proximo login? (S/N) [S]"
     $TrocarSenha = $TrocarOpt -ne 'N'
@@ -278,16 +280,17 @@ elseif ($Modo -eq 'lote') {
 
     # Tenta detectar se o CSV tem cabecalho
     $PrimeiraLinha = (Get-Content $CaminhoCSV -TotalCount 1).ToLower()
-    $TemCabecalho  = $PrimeiraLinha -match 'nome|first|cpf|sobrenome'
+    $TemCabecalho = $PrimeiraLinha -match 'nome|first|cpf|sobrenome'
 
     if ($TemCabecalho) {
         $Dados = Import-Csv $CaminhoCSV -Encoding UTF8
-    } else {
+    }
+    else {
         # Sem cabecalho: Nome,Sobrenome,CPF,Departamento,Cargo,OU,Senha
-        $Dados = Import-Csv $CaminhoCSV -Header "Nome","Sobrenome","CPF","Departamento","Cargo","OU","Senha" -Encoding UTF8
+        $Dados = Import-Csv $CaminhoCSV -Header "Nome", "Sobrenome", "CPF", "Departamento", "Cargo", "OU", "Senha" -Encoding UTF8
     }
 
-    $Total   = $Dados.Count
+    $Total = $Dados.Count
     $Sucesso = 0; $Falha = 0; $Contador = 0
 
     foreach ($linha in $Dados) {
@@ -307,11 +310,19 @@ elseif ($Modo -eq 'lote') {
                 -OU           ($linha.OU         ?? '') `
                 -SenhaTexto   $Senha
             $Sucesso++
-        } catch {
+        }
+        catch {
             Write-Error " -> ERRO: $_"
             $Falha++
         }
     }
+
+    Write-Host ""
+    Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Cyan
+    Write-Host "  Resultado: $Sucesso criado(s)  |  $Falha erro(s)" -ForegroundColor $(if ($Falha -gt 0) { 'Yellow' }else { 'Green' })
+    Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Cyan
+    Write-Host ""
+}
 
     Write-Host ""
     Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Cyan
