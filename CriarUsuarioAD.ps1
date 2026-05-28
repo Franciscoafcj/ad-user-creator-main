@@ -301,13 +301,20 @@ elseif ($Modo -eq 'lote') {
         $Senha = if ($linha.Senha) { $linha.Senha } else { "Mudar@$(Get-Date -Format 'yyyy')" }
 
         try {
+            $NomeVal = if ($linha.Nome) { $linha.Nome }          elseif ($linha.'First Name') { $linha.'First Name' } else { '' }
+            $SobrenomeVal = if ($linha.Sobrenome) { $linha.Sobrenome }     elseif ($linha.'Last Name') { $linha.'Last Name' }  else { '' }
+            $CPFVal = if ($linha.CPF) { $linha.CPF }           else { '' }
+            $DepartamentoVal = if ($linha.Departamento) { $linha.Departamento }  elseif ($linha.Department) { $linha.Department }   else { '' }
+            $CargoVal = if ($linha.Cargo) { $linha.Cargo }         elseif ($linha.Title) { $linha.Title }        else { '' }
+            $OUVal = if ($linha.OU) { $linha.OU }            else { '' }
+
             Criar-UsuarioAD `
-                -Nome         ($linha.Nome      ?? $linha.'First Name' ?? '') `
-                -Sobrenome    ($linha.Sobrenome  ?? $linha.'Last Name'  ?? '') `
-                -CPF          ($linha.CPF        ?? '') `
-                -Departamento ($linha.Departamento ?? $linha.Department ?? '') `
-                -Cargo        ($linha.Cargo      ?? $linha.Title        ?? '') `
-                -OU           ($linha.OU         ?? '') `
+                -Nome         $NomeVal `
+                -Sobrenome    $SobrenomeVal `
+                -CPF          $CPFVal `
+                -Departamento $DepartamentoVal `
+                -Cargo        $CargoVal `
+                -OU           $OUVal `
                 -SenhaTexto   $Senha
             $Sucesso++
         }
@@ -320,13 +327,6 @@ elseif ($Modo -eq 'lote') {
     Write-Host ""
     Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Cyan
     Write-Host "  Resultado: $Sucesso criado(s)  |  $Falha erro(s)" -ForegroundColor $(if ($Falha -gt 0) { 'Yellow' }else { 'Green' })
-    Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Cyan
-    Write-Host ""
-}
-
-    Write-Host ""
-    Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Cyan
-    Write-Host "  Resultado: $Sucesso criado(s)  |  $Falha erro(s)" -ForegroundColor $(if($Falha -gt 0){'Yellow'}else{'Green'})
     Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Cyan
     Write-Host ""
 }
