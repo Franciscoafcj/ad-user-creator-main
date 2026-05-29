@@ -757,7 +757,8 @@ userForm.addEventListener('submit', function (e) {
   document.getElementById('copyScriptBtn')._script  = script;
   document.getElementById('downloadBtn')._script    = script;
   document.getElementById('downloadBtn')._filename  = `criar_${sam}.ps1`;
-  document.getElementById('executeBtn')._script     = script;
+  // Armazena dados estruturados (JSON) para o botão Executar usar a API diretamente
+  document.getElementById('executeBtn')._userData   = userData;
 
   showToast('Script gerado com sucesso! ✓');
 });
@@ -1893,45 +1894,54 @@ function guessOuIcon(name) {
 
 /** Ponto de entrada: inicializa a UI com base em window.AD_DATA */
 function initWithADData() {
-  const pill       = document.getElementById('statusPill');
-  const dot        = pill.querySelector('.dot');
-  const statusText = document.getElementById('statusText');
-  const banner     = document.getElementById('adBanner');
-  const bannerWarn = document.getElementById('adBannerWarn');
+  const speechBubble = document.getElementById('sysSpeechText');
+  const valStatus    = document.getElementById('sysValStatus');
+  const valDomain    = document.getElementById('sysValDomain');
+  const valUser      = document.getElementById('sysValUser');
+  const valOus       = document.getElementById('sysValOus');
+  const trayAdStatus = document.getElementById('trayAdStatus');
 
   if (!window.AD_DATA) {
     // ── Sem dados do AD ─────────────────────────────────────────
-    dot.style.background = '#f59e0b';
-    statusText.textContent = 'AD não conectado';
-    bannerWarn.style.display = 'block';
+    if (valStatus) valStatus.innerHTML = '<span class="status-dot dot-yellow"></span> AD Desconectado';
+    if (speechBubble) speechBubble.textContent = 'Active Directory offline. Execute o microserviço local (Start.bat) para buscar e sincronizar dados de domínio em tempo real!';
+    if (trayAdStatus) trayAdStatus.setAttribute('title', 'Active Directory: Desconectado');
     return;
   }
 
   const { domain, currentUser, ous, generatedAt } = window.AD_DATA;
 
-  // ── Status pill ─────────────────────────────────────────────
-  dot.style.background = '#10b981';
-  statusText.textContent = `AD: ${domain.dnsRoot}`;
+  // ── Atualiza o painel de status do sistema ─────────────────────
+  if (valStatus) {
+    valStatus.innerHTML = '<span class="status-dot dot-green"></span> Online';
+  }
+  if (valDomain) {
+    valDomain.textContent = domain.dnsRoot;
+  }
+  if (valUser && currentUser) {
+    valUser.textContent = domain.netBiosName + '\\' + currentUser.samAccountName;
+  }
+  if (valOus && ous) {
+    valOus.textContent = ous.length + ' OUs carregadas';
+  }
+  if (speechBubble && currentUser) {
+    const genDate = new Date(generatedAt);
+    const genFmt  = genDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    speechBubble.textContent = 'Conectado ao domínio ' + domain.dnsRoot + ' com sucesso! Operador logado: ' + (currentUser.displayName || currentUser.samAccountName) + '. Sincronizado às ' + genFmt + '.';
+  }
 
-  // ── Banner de conexão ────────────────────────────────────────
-  const genDate = new Date(generatedAt);
-  const genFmt  = genDate.toLocaleString('pt-BR', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  });
-  document.getElementById('adBannerSub').textContent =
-    `Dados exportados em ${genFmt} · ${domain.netBiosName}\\${currentUser.samAccountName}`;
-  document.getElementById('adBannerUser').innerHTML =
-    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ${domain.netBiosName}\\${currentUser.samAccountName}`;
-  document.getElementById('adBannerDomain').innerHTML =
-    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> ${domain.dnsRoot}`;
-  document.getElementById('adBannerOuCount').innerHTML =
-    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> ${ous.length} OUs`;
-  banner.style.display = 'block';
+  // ── Atualiza o System Tray ─────────────────────────────────────
+  if (trayAdStatus) {
+    trayAdStatus.setAttribute('title', 'Active Directory: Conectado (' + domain.dnsRoot + ')');
+    const trayAdKey = trayAdStatus.querySelector('.pixel-icon rect:nth-child(1)');
+    if (trayAdKey) trayAdKey.setAttribute('fill', '#00aa00'); // Fica verde
+  }
 
   // ── Pré-preencher campo de domínio ───────────────────────────
-  domainInput.value = domain.dnsRoot;
-  updateEmailAndSam();  // atualiza preview de e-mail/SAM
+  if (domainInput) {
+    domainInput.value = domain.dnsRoot;
+    updateEmailAndSam();  // atualiza preview de e-mail/SAM
+  }
 
   // ── Substituir árvore de OUs pela estrutura real do AD ───────
   if (ous && ous.length > 0) {
@@ -2122,8 +2132,7 @@ function initWithADData() {
 
 
 
-// Inicializa ao carregar
-initWithADData();
+// initWithADData() é chamado pelo módulo do servidor após buscar /api/ad-data
 
 /* ═══════════════════════════════════════════════════════════════
    USUÁRIO MODELO — Autocomplete (reutilizável)
@@ -2397,21 +2406,23 @@ initUserSearch({
 });
 
 /* ═══════════════════════════════════════════════════════════════
-   SERVIDOR LOCAL — Integração com Start-Server.ps1
+   SERVIDOR LOCAL — Integração com Server.ps1 (unificado)
    Fluxo:
      1. checkServer() → GET /api/ping → recebe token de sessão
-     2. executeScript() → POST /api/run com {script: "..."} + token
-     3. Terminal exibe a saída linha a linha com colorização
+     2. loadADData()  → GET /api/ad-data → popula window.AD_DATA
+     3. executarCriarUsuario() → POST /api/criar-usuario (JSON)
 ═══════════════════════════════════════════════════════════════ */
 
 (function () {
-  const SERVER_PORT = (window.APP_CONFIG && window.APP_CONFIG.serverPort) ? window.APP_CONFIG.serverPort : 7510;
+  const SERVER_PORT = 7510; // Lido do config.json pelo servidor; sincronize aqui se mudar
   const SERVER_BASE = `http://localhost:${SERVER_PORT}`;
 
-  let serverToken     = null;
+  // Exporta para acesso global (usado nos outros módulos abaixo)
+  window._SERVER_BASE = SERVER_BASE;
+  window._serverToken = null;
+
   let serverAvailable = false;
 
-  // Elementos de UI
   const executeBtnEl  = document.getElementById('executeBtn');
   const serverPillEl  = document.getElementById('serverPill');
   const serverPillTxt = document.getElementById('serverPillText');
@@ -2419,32 +2430,54 @@ initUserSearch({
   const terminalOut   = document.getElementById('terminalOutput');
   const terminalSt    = document.getElementById('terminalStatus');
 
-  /* ── Verifica disponibilidade do servidor ── */
+  /* ── Verifica disponibilidade do servidor e obtém token ── */
   async function checkServer() {
     try {
-      const ctrl = new AbortController();
+      const ctrl  = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 1800);
       const res   = await fetch(`${SERVER_BASE}/api/ping`, { signal: ctrl.signal });
       clearTimeout(timer);
-
       if (!res.ok) throw new Error();
-      const data  = await res.json();
-      serverToken     = data.token;
-      serverAvailable = true;
+      const data = await res.json();
+      window._serverToken = data.token;
+      serverAvailable     = true;
       setServerIndicator(true, data.user, data.isAdmin);
+      // Carrega dados do AD após confirmar que o servidor está on
+      loadADData();
     } catch {
-      serverToken     = null;
-      serverAvailable = false;
+      window._serverToken = null;
+      serverAvailable     = false;
       setServerIndicator(false);
+      // Mesmo sem servidor, inicializa a UI (modo sem AD)
+      initWithADData();
     }
   }
 
-  /* ── Atualiza pill do servidor e visibilidade do botão Executar ── */
+  /* ── Busca dados do AD ao vivo via /api/ad-data ── */
+  async function loadADData() {
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const res   = await fetch(`${SERVER_BASE}/api/ad-data`, {
+        headers: { 'X-Server-Token': window._serverToken },
+        signal : ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.error) {
+          window.AD_DATA = data;
+        }
+      }
+    } catch { /* servidor offline ou AD indisponível — sem dados */ }
+    // Inicializa a UI com os dados disponíveis (ou sem dados)
+    initWithADData();
+  }
+
+  /* ── Atualiza indicador visual do servidor ── */
   function setServerIndicator(online, user, isAdmin) {
     if (serverPillEl) {
-      serverPillEl.className = online
-        ? 'server-pill server-pill-on'
-        : 'server-pill server-pill-off';
+      serverPillEl.className = online ? 'server-pill server-pill-on' : 'server-pill server-pill-off';
     }
     if (serverPillTxt) {
       serverPillTxt.textContent = online
@@ -2455,41 +2488,67 @@ initUserSearch({
       executeBtnEl.style.display = online ? 'flex' : 'none';
       executeBtnEl.title = online
         ? `Executar via servidor local (${user || 'localhost'})`
-        : 'Servidor offline — execute Start-Server.ps1';
+        : 'Servidor offline — execute Start.bat';
     }
   }
 
-  /* ── Executa o script via servidor local ── */
-  async function executeScript(scriptContent) {
-    if (!serverAvailable || !serverToken) {
-      showToast('Servidor offline. Execute Start-Server.ps1.', '#f59e0b');
+  /* ── Exibe resultado no terminal ── */
+  function setTerminalStatus(type, text) {
+    if (!terminalSt) return;
+    terminalSt.textContent = text;
+    terminalSt.className   = `terminal-status-badge terminal-st-${type}`;
+  }
+
+  function appendTermLine(text, typeHint) {
+    const line  = document.createElement('div');
+    line.className = 'tline';
+    const lower = (text || '').toLowerCase();
+    if (typeHint === 'error' || text.includes('❌') || lower.includes('falha') || lower.includes('erro') || lower.includes('error') || lower.includes('exception'))
+      line.classList.add('tl-error');
+    else if (text.includes('✅') || lower.includes('sucesso') || lower.includes('criado') || lower.includes('copiado') || /\bok\b/.test(lower))
+      line.classList.add('tl-success');
+    else if (text.includes('⚠') || lower.includes('warning') || lower.includes('aviso') || lower.includes('pulando'))
+      line.classList.add('tl-warn');
+    else if (text.includes('🔗') || text.includes('⚡') || text.includes('ℹ') || typeHint === 'info' || lower.includes('copiando') || lower.includes('grupos'))
+      line.classList.add('tl-info');
+    else if (text.startsWith('#') || text.startsWith('//'))
+      line.classList.add('tl-comment');
+    line.textContent = text || '\u00a0';
+    terminalOut.appendChild(line);
+    terminalOut.scrollTop = terminalOut.scrollHeight;
+  }
+
+  /* ── Chama endpoint e exibe resultado no terminal ── */
+  async function chamarEndpoint(endpoint, method, body, termPanel, termOutput, termStatus) {
+    const panel = termPanel  || terminalPanel;
+    const out   = termOutput || terminalOut;
+    const st    = termStatus || terminalSt;
+    const addLine = (t, h) => { appendTermLineInto(out, t, h); };
+    const setStatus = (tp, tx) => { if (st) { st.textContent = tx; st.className = `terminal-status-badge terminal-st-${tp}`; } };
+
+    if (!window._serverToken) {
+      showToast('Servidor offline. Execute Start.bat.', '#f59e0b');
       return;
     }
 
-    // Exibe e reseta terminal
-    terminalPanel.style.display = 'block';
-    terminalOut.innerHTML = '';
-    setTerminalStatus('running', '⏳ Executando...');
-    appendTermLine('⚡ Enviando script ao servidor local...', 'info');
-    terminalPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    panel.style.display = 'block';
+    out.innerHTML = '';
+    setStatus('running', '⏳ Executando...');
+    addLine('⚡ Enviando ao servidor...', 'info');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
     try {
       const ctrl  = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 315000); // 5min + buffer
-
-      const res = await fetch(`${SERVER_BASE}/api/run`, {
-        method : 'POST',
-        headers: {
-          'Content-Type'   : 'application/json',
-          'X-Server-Token' : serverToken,
-        },
-        body  : JSON.stringify({ script: scriptContent }),
-        signal: ctrl.signal,
+      const timer = setTimeout(() => ctrl.abort(), 315000);
+      const res   = await fetch(`${SERVER_BASE}${endpoint}`, {
+        method : method || 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Server-Token': window._serverToken },
+        body   : body ? JSON.stringify(body) : undefined,
+        signal : ctrl.signal,
       });
       clearTimeout(timer);
 
       if (res.status === 401) {
-        // Token expirou (servidor reiniciado) — re-obtém e avisa
         await checkServer();
         throw new Error('Token expirou (servidor foi reiniciado). Tente novamente.');
       }
@@ -2499,72 +2558,75 @@ initUserSearch({
       }
 
       const data = await res.json();
-
-      // Anima linhas uma a uma
-      terminalOut.innerHTML = '';
+      out.innerHTML = '';
       for (const line of (data.lines || [])) {
-        appendTermLine(line);
+        addLine(line);
         await new Promise(r => setTimeout(r, 20));
       }
 
       if (data.success) {
-        setTerminalStatus('success', '✅ Concluído com sucesso');
-        showToast('Usuário criado com sucesso! ✓');
+        setStatus('success', '✅ Concluído com sucesso');
+        return data;
       } else {
-        setTerminalStatus('error', `❌ Falhou (código ${data.exitCode})`);
+        setStatus('error', `❌ Falhou`);
         showToast('Falhou — veja o terminal.', '#ef4444');
+        return null;
       }
-
     } catch (err) {
-      terminalOut.innerHTML = '';
-      appendTermLine(`❌ ${err.message}`, 'error');
-      setTerminalStatus('error', 'Erro de comunicação');
+      out.innerHTML = '';
+      addLine(`❌ ${err.message}`, 'error');
+      setStatus('error', 'Erro de comunicação');
       showToast('Erro ao comunicar com o servidor.', '#ef4444');
+      return null;
     }
   }
 
-  /* ── Atualiza badge de status do terminal ── */
-  function setTerminalStatus(type, text) {
-    if (!terminalSt) return;
-    terminalSt.textContent = text;
-    terminalSt.className = `terminal-status-badge terminal-st-${type}`;
-  }
-
-  /* ── Adiciona linha ao terminal com colorização automática ── */
-  function appendTermLine(text, typeHint) {
+  /* ── appendTermLine que aceita elemento customizado ── */
+  function appendTermLineInto(container, text, typeHint) {
     const line  = document.createElement('div');
     line.className = 'tline';
     const lower = (text || '').toLowerCase();
-
-    if (typeHint === 'error'
-        || text.includes('❌') || text.startsWith('⚠  STDERR')
-        || lower.includes('falha') || lower.includes('error') || lower.includes('erro')
-        || lower.includes('exception')) {
+    if (typeHint === 'error' || text.includes('❌') || lower.includes('falha') || lower.includes('erro') || lower.includes('error'))
       line.classList.add('tl-error');
-    } else if (text.includes('✅') || lower.includes('sucesso') || lower.includes('criado')
-               || lower.includes('copiado') || /\bok\b/.test(lower)) {
+    else if (text.includes('✅') || lower.includes('sucesso') || lower.includes('criado') || lower.includes('desbloqueada') || lower.includes('desabilitada'))
       line.classList.add('tl-success');
-    } else if (text.includes('⚠') || text.includes('Warning') || lower.includes('aviso')
-               || lower.includes('warning') || lower.includes('pulando')) {
+    else if (text.includes('⚠') || lower.includes('warning') || lower.includes('aviso'))
       line.classList.add('tl-warn');
-    } else if (text.includes('🔗') || text.includes('⚡') || text.includes('ℹ')
-               || typeHint === 'info' || lower.includes('copiando') || lower.includes('grupos')) {
+    else if (text.includes('🔗') || text.includes('⚡') || text.includes('🔑') || text.includes('📂') || text.includes('📝') || typeHint === 'info')
       line.classList.add('tl-info');
-    } else if (text.startsWith('#') || text.startsWith('//')) {
-      line.classList.add('tl-comment');
-    }
-
-    line.textContent = text || '\u00a0'; // non-breaking space for empty lines
-    terminalOut.appendChild(line);
-    terminalOut.scrollTop = terminalOut.scrollHeight;
+    line.textContent = text || '\u00a0';
+    container.appendChild(line);
+    container.scrollTop = container.scrollHeight;
   }
 
-  /* ── Event listeners ── */
+  // Expõe chamarEndpoint para os outros módulos
+  window._chamarEndpoint = chamarEndpoint;
+
+  /* ── Botão Executar (Criar Usuário) — POST /api/criar-usuario ── */
   if (executeBtnEl) {
-    executeBtnEl.addEventListener('click', () => {
-      const script = executeBtnEl._script;
-      if (!script) { showToast('Gere o script primeiro.', '#f59e0b'); return; }
-      executeScript(script);
+    executeBtnEl.addEventListener('click', async () => {
+      const userData = executeBtnEl._userData;
+      if (!userData) { showToast('Gere o script primeiro.', '#f59e0b'); return; }
+
+      // Monta payload JSON para o endpoint
+      const payload = {
+        nome         : userData.firstName,
+        sobrenome    : userData.lastName,
+        nomeCompleto : userData.fullName,
+        cpf          : userData.cpf11,
+        email        : userData.email,
+        sam          : userData.sam,
+        ou           : userData.ou,
+        senha        : userData.password,
+        trocarSenha  : userData.mustChange,
+        habilitado   : userData.enabled,
+        departamento : '',
+        usuarioModelo: userData.templateUser,
+      };
+
+      const result = await chamarEndpoint('/api/criar-usuario', 'POST', payload,
+        terminalPanel, terminalOut, terminalSt);
+      if (result && result.success) showToast('Usuário criado com sucesso! ✓');
     });
   }
 
@@ -2575,7 +2637,7 @@ initUserSearch({
 
   /* ── Inicialização ── */
   checkServer();
-  setInterval(checkServer, 15000); // re-verifica a cada 15s
+  setInterval(checkServer, 30000); // re-verifica a cada 30s
 })();
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2593,9 +2655,17 @@ initUserSearch({
   const allTabs   = [tabCreate, tabDisable, tabLocked].filter(Boolean);
   const allPanels = [mainPanel, disPanel, lockPanel].filter(Boolean);
 
+  let currentTabName = 'create';
+
+  // ── Alternância de Abas ────────────────────────────────────────
   function showTab(name) {
+    currentTabName = name;
     allTabs.forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
     allPanels.forEach(p => { p.style.display = 'none'; });
+
+    // Se a janela estiver minimizada, restaura ao alternar
+    const win = document.getElementById('mainOSWindow');
+    if (win) win.style.display = 'flex';
 
     if (name === 'create') {
       tabCreate.classList.add('active'); tabCreate.setAttribute('aria-selected', 'true');
@@ -2610,9 +2680,204 @@ initUserSearch({
     }
   }
 
-  tabCreate.addEventListener('click',  () => showTab('create'));
-  tabDisable.addEventListener('click', () => showTab('disable'));
-  if (tabLocked) tabLocked.addEventListener('click', () => showTab('locked'));
+  tabCreate.addEventListener('click',  () => {
+    const win = document.getElementById('mainOSWindow');
+    if (currentTabName === 'create' && win && win.style.display !== 'none') {
+      win.style.display = 'none'; // Minimiza se clicar no app ativo
+    } else {
+      showTab('create');
+    }
+  });
+  
+  tabDisable.addEventListener('click', () => {
+    const win = document.getElementById('mainOSWindow');
+    if (currentTabName === 'disable' && win && win.style.display !== 'none') {
+      win.style.display = 'none';
+    } else {
+      showTab('disable');
+    }
+  });
+
+  if (tabLocked) {
+    tabLocked.addEventListener('click', () => {
+      const win = document.getElementById('mainOSWindow');
+      if (currentTabName === 'locked' && win && win.style.display !== 'none') {
+        win.style.display = 'none';
+      } else {
+        showTab('locked');
+      }
+    });
+  }
+
+  // ── Menu Iniciar e Itens ────────────────────────────────────────
+  const startBtn  = document.getElementById('startBtn');
+  const startMenu = document.getElementById('startMenu');
+
+  function toggleStartMenu(e) {
+    if (e) e.stopPropagation();
+    const isOpen = startMenu.style.display === 'flex';
+    startMenu.style.display = isOpen ? 'none' : 'flex';
+    startBtn.classList.toggle('active', !isOpen);
+  }
+
+  function closeStartMenu() {
+    startMenu.style.display = 'none';
+    startBtn.classList.remove('active');
+  }
+
+  startBtn.addEventListener('click', toggleStartMenu);
+  document.getElementById('menuBtnSystem')?.addEventListener('click', toggleStartMenu);
+
+  // Closes start menu when clicking outside
+  document.addEventListener('click', (e) => {
+    if (startMenu && !startMenu.contains(e.target) && e.target !== startBtn) {
+      closeStartMenu();
+    }
+  });
+
+  // Start Menu Tab Switching
+  document.getElementById('startItemCreate')?.addEventListener('click', () => { showTab('create'); closeStartMenu(); });
+  document.getElementById('startItemDisable')?.addEventListener('click', () => { showTab('disable'); closeStartMenu(); });
+  document.getElementById('startItemLocked')?.addEventListener('click', () => { showTab('locked'); closeStartMenu(); });
+
+  // ── Modais (Ajuda / Sobre) ──────────────────────────────────────
+  const docModal   = document.getElementById('docModal');
+  const aboutModal = document.getElementById('aboutModal');
+
+  function toggleModal(modal, open) {
+    if (modal) modal.style.display = open ? 'flex' : 'none';
+    closeStartMenu();
+  }
+
+  // Help Modal (Documentação)
+  document.getElementById('menuBtnDoc')?.addEventListener('click', () => toggleModal(docModal, true));
+  document.getElementById('startItemHelp')?.addEventListener('click', () => toggleModal(docModal, true));
+  document.getElementById('closeDocModal')?.addEventListener('click', () => toggleModal(docModal, false));
+  document.getElementById('confirmDocModalBtn')?.addEventListener('click', () => toggleModal(docModal, false));
+
+  // About Modal (Sobre)
+  document.getElementById('menuBtnAbout')?.addEventListener('click', () => toggleModal(aboutModal, true));
+  document.getElementById('startItemAbout')?.addEventListener('click', () => toggleModal(aboutModal, true));
+  document.getElementById('closeAboutModal')?.addEventListener('click', () => toggleModal(aboutModal, false));
+  document.getElementById('confirmAboutBtn')?.addEventListener('click', () => toggleModal(aboutModal, false));
+
+  // ── Controles da Janela Clássica ───────────────────────────────
+  const winMinimize = document.getElementById('winMinimizeBtn');
+  const winMaximize = document.getElementById('winMaximizeBtn');
+  const winClose    = document.getElementById('winCloseBtn');
+  const winOS       = document.getElementById('mainOSWindow');
+
+  winMinimize?.addEventListener('click', () => {
+    if (winOS) winOS.style.display = 'none'; // Esconde a janela (minimizar)
+  });
+
+  winMaximize?.addEventListener('click', () => {
+    if (winOS) winOS.classList.toggle('maximized');
+  });
+
+  winClose?.addEventListener('click', () => {
+    window._shutdownSystem();
+  });
+
+  // ── Relógio Digital da System Tray ──────────────────────────────
+  const clockEl = document.getElementById('trayClock');
+  function updateClock() {
+    if (!clockEl) return;
+    const now  = new Date();
+    let hours   = now.getHours();
+    let minutes = now.getMinutes();
+    let seconds = now.getSeconds();
+    
+    hours   = hours < 10 ? '0' + hours : hours;
+    minutes = minutes < 10 ? '0' + minutes : minutes;
+    seconds = seconds < 10 ? '0' + seconds : seconds;
+    
+    clockEl.textContent = hours + ':' + minutes + ':' + seconds;
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  // ── Sequência de Desligamento CRT ───────────────────────────────
+  window._shutdownSystem = function() {
+    closeStartMenu();
+    const shutdownScreen = document.getElementById('shutdownScreen');
+    const winOS = document.getElementById('mainOSWindow');
+    
+    if (winOS && shutdownScreen) {
+      // Aplica animação de colapso CRT na janela principal
+      winOS.classList.add('crt-collapse');
+      
+      // Abre a tela preta com a mensagem amber após o colapso
+      setTimeout(() => {
+        shutdownScreen.style.display = 'flex';
+        winOS.style.display = 'none';
+        winOS.classList.remove('crt-collapse');
+      }, 550);
+    }
+  };
+
+  // Botão desligar da barra de tarefas
+  document.getElementById('trayPowerBtn')?.addEventListener('click', window._shutdownSystem);
+  document.getElementById('startItemShutdown')?.addEventListener('click', window._shutdownSystem);
+
+  // ── Sequência de Boot / Reinício (Mock BIOS) ────────────────────
+  window._rebootSystem = function() {
+    const shutdownScreen = document.getElementById('shutdownScreen');
+    const winOS = document.getElementById('mainOSWindow');
+    
+    if (shutdownScreen && winOS) {
+      shutdownScreen.style.display = 'none';
+      
+      // Cria overlay de BIOS temporário
+      const bios = document.createElement('div');
+      bios.style.position = 'fixed';
+      bios.style.inset = '0';
+      bios.style.backgroundColor = '#000000';
+      bios.style.color = '#ffffff';
+      bios.style.fontFamily = 'monospace';
+      bios.style.fontSize = '12px';
+      bios.style.padding = '20px';
+      bios.style.zIndex = '1000000';
+      bios.style.lineHeight = '1.4';
+      document.body.appendChild(bios);
+
+      const logs = [
+        'AWARD SOFTWARE, INC. © 1999',
+        'PENTIUM III CPU at 500MHz',
+        'Memory Test: 128MB OK',
+        'Detecting IDE Primary Master ... QUANTUM FIREBALL 10.2GB',
+        'Detecting IDE Primary Slave  ... NONE',
+        'S.M.A.R.T. Capable and Status OK',
+        '==================================================',
+        'Booting system from C: drive...',
+        'Loading AD_USER_CREATOR.EXE ... OK',
+        'Loading network drivers ... OK',
+        'Establishing AD loopback tunnel ... OK',
+        'Starting retro graphics adapter ... OK',
+        '==================================================',
+        'Boot sequence completed successfully.'
+      ];
+
+      let idx = 0;
+      function printLine() {
+        if (idx < logs.length) {
+          const l = document.createElement('div');
+          l.textContent = logs[idx++];
+          bios.appendChild(l);
+          bios.scrollTop = bios.scrollHeight;
+          setTimeout(printLine, 80 + Math.random() * 100);
+        } else {
+          setTimeout(() => {
+            if (document.body.contains(bios)) document.body.removeChild(bios);
+            winOS.style.display = 'flex';
+            showTab('create');
+            showToast('Sistema reinicializado! ✓');
+          }, 600);
+        }
+      }
+      printLine();
+    }
+  };
 })();
 
 
@@ -2931,11 +3196,17 @@ function generateDisableScript({ sam, displayName, reason, moveOu, targetOu, exp
     `).join('');
     summaryEl.style.display = 'block';
 
-    // Armazena script para os botões
+    // Armazena script PS1 (copiar/baixar) e dados JSON (executar via API)
     document.getElementById('copyDisableScriptBtn')._script = script;
     document.getElementById('downloadDisableBtn')._script   = script;
     document.getElementById('downloadDisableBtn')._filename = `desabilitar_${sam}.ps1`;
-    document.getElementById('executeDisableBtn')._script    = script;
+    document.getElementById('executeDisableBtn')._disableData = {
+      sam          : sam,
+      motivo       : reason,
+      moverOu      : moveOu,
+      ouDestino    : targetOu,
+      expirarSenha : expirePassword,
+    };
 
     showToast('Script de desabilitação gerado! ✓');
   });
@@ -2951,107 +3222,32 @@ function generateDisableScript({ sam, displayName, reason, moveOu, targetOu, exp
 
 
 /* ═══════════════════════════════════════════════════════════════
-   SERVIDOR LOCAL — Integração com a aba Desabilitar
-   Reutiliza o mesmo servidor Start-Server.ps1
+   SERVIDOR LOCAL — Integração da aba Desabilitar
+   Usa POST /api/desabilitar com JSON estruturado.
 ═══════════════════════════════════════════════════════════════ */
 (function () {
-  const SERVER_PORT = (window.APP_CONFIG && window.APP_CONFIG.serverPort) ? window.APP_CONFIG.serverPort : 7510;
-  const SERVER_BASE = `http://localhost:${SERVER_PORT}`;
-
   const execBtn       = document.getElementById('executeDisableBtn');
   const terminalPanel = document.getElementById('disableTerminalPanel');
   const terminalOut   = document.getElementById('disableTerminalOutput');
   const terminalSt    = document.getElementById('disableTerminalStatus');
 
-  // Verifica servidor e mostra/oculta botão Executar (compartilhado com o ping da aba principal)
-  async function checkAndToggle() {
-    try {
-      const ctrl  = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 1800);
-      const res   = await fetch(`${SERVER_BASE}/api/ping`, { signal: ctrl.signal });
-      clearTimeout(timer);
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      if (execBtn) {
-        execBtn.style.display = 'flex';
-        execBtn.title = `Executar via servidor local (${data.user || 'localhost'})`;
-      }
-      return data.token;
-    } catch {
-      if (execBtn) execBtn.style.display = 'none';
-      return null;
-    }
-  }
-
-  function setStatus(type, text) {
-    if (!terminalSt) return;
-    terminalSt.textContent = text;
-    terminalSt.className = `terminal-status-badge terminal-st-${type}`;
-  }
-
-  function addLine(text, hint) {
-    const div = document.createElement('div');
-    div.className = 'tline';
-    const lower = (text || '').toLowerCase();
-    if (hint === 'error' || text.includes('❌') || lower.includes('falha') || lower.includes('error'))
-      div.classList.add('tl-error');
-    else if (text.includes('✅') || lower.includes('sucesso') || lower.includes('desabilitado'))
-      div.classList.add('tl-success');
-    else if (text.includes('⚠') || lower.includes('warning'))
-      div.classList.add('tl-warn');
-    else if (text.includes('🔑') || text.includes('📂') || text.includes('📝') || hint === 'info')
-      div.classList.add('tl-info');
-    div.textContent = text || '\u00a0';
-    terminalOut.appendChild(div);
-    terminalOut.scrollTop = terminalOut.scrollHeight;
+  // Atualiza visibilidade do botão conforme disponibilidade do servidor
+  function syncBtn() {
+    if (!execBtn) return;
+    const online = !!window._serverToken;
+    execBtn.style.display = online ? 'flex' : 'none';
   }
 
   if (execBtn) {
     execBtn.addEventListener('click', async () => {
-      const script = execBtn._script;
-      if (!script) { showToast('Gere o script primeiro.', '#f59e0b'); return; }
+      const disableData = execBtn._disableData;
+      if (!disableData) { showToast('Gere o script primeiro.', '#f59e0b'); return; }
 
-      const token = await checkAndToggle();
-      if (!token) { showToast('Servidor offline. Execute Start-Server.ps1.', '#f59e0b'); return; }
-
-      terminalPanel.style.display = 'block';
-      terminalOut.innerHTML = '';
-      setStatus('running', '⏳ Executando...');
-      addLine('⚡ Enviando script ao servidor local...', 'info');
-      terminalPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-      try {
-        const ctrl  = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 315000);
-        const res = await fetch(`${SERVER_BASE}/api/run`, {
-          method : 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Server-Token': token },
-          body   : JSON.stringify({ script }),
-          signal : ctrl.signal,
-        });
-        clearTimeout(timer);
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || `Erro HTTP ${res.status}`);
-        }
-        const data = await res.json();
-        terminalOut.innerHTML = '';
-        for (const line of (data.lines || [])) {
-          addLine(line);
-          await new Promise(r => setTimeout(r, 20));
-        }
-        if (data.success) {
-          setStatus('success', '✅ Concluído');
-          showToast('Conta desabilitada com sucesso! ✓');
-        } else {
-          setStatus('error', `❌ Falhou (código ${data.exitCode})`);
-          showToast('Falhou — veja o terminal.', '#ef4444');
-        }
-      } catch (err) {
-        addLine(`❌ ${err.message}`, 'error');
-        setStatus('error', 'Erro de comunicação');
-        showToast('Erro ao comunicar com o servidor.', '#ef4444');
-      }
+      const result = await window._chamarEndpoint(
+        '/api/desabilitar', 'POST', disableData,
+        terminalPanel, terminalOut, terminalSt
+      );
+      if (result && result.success) showToast('Conta desabilitada com sucesso! ✓');
     });
   }
 
@@ -3060,9 +3256,9 @@ function generateDisableScript({ sam, displayName, reason, moveOu, targetOu, exp
     terminalPanel.style.display = 'none';
   });
 
-  // Sincroniza estado do botão Executar com o ping periódico do servidor principal
-  checkAndToggle();
-  setInterval(checkAndToggle, 15000);
+  // Sincroniza botão quando o token atualizar
+  syncBtn();
+  setInterval(syncBtn, 3000);
 })();
 
 
@@ -3477,7 +3673,13 @@ function generateBulkDisableScript(users, reason, moveOu, targetOu, expirePasswo
     document.getElementById('copyDisableBulkBtn')._script    = script;
     document.getElementById('downloadDisableBulkBtn')._script = script;
     document.getElementById('downloadDisableBulkBtn')._filename = `desabilitar_lote_${users.length}usuarios.ps1`;
-    document.getElementById('executeDisableBulkBtn')._script  = script;
+    document.getElementById('executeDisableBulkBtn')._loteData  = {
+      usuarios     : users.map(u => ({ sam: u.sam })),
+      motivo       : reason,
+      moverOu      : moveOu,
+      ouDestino    : targetOu,
+      expirarSenha : expirePw,
+    };
 
     showToast(`Script gerado para ${users.length} usuário(s)! ✓`);
   });
@@ -3493,104 +3695,31 @@ function generateBulkDisableScript(users, reason, moveOu, targetOu, expirePasswo
 
 
 /* ═══════════════════════════════════════════════════════════════
-   SERVIDOR LOCAL — Integração Em Lote (Desabilitar)
+   SERVIDOR LOCAL — Integração Desabilitar em Lote
+   Usa POST /api/desabilitar-lote com JSON estruturado.
 ═══════════════════════════════════════════════════════════════ */
 (function () {
-  const SERVER_PORT = (window.APP_CONFIG && window.APP_CONFIG.serverPort) ? window.APP_CONFIG.serverPort : 7510;
-  const SERVER_BASE = `http://localhost:${SERVER_PORT}`;
+  const execBtn  = document.getElementById('executeDisableBulkBtn');
+  const termPanel = document.getElementById('disableBulkTerminalPanel');
+  const termOut   = document.getElementById('disableBulkTerminalOutput');
+  const termSt    = document.getElementById('disableBulkTerminalStatus');
 
-  const execBtn     = document.getElementById('executeDisableBulkBtn');
-  const termPanel   = document.getElementById('disableBulkTerminalPanel');
-  const termOut     = document.getElementById('disableBulkTerminalOutput');
-  const termSt      = document.getElementById('disableBulkTerminalStatus');
-
-  async function getToken() {
-    try {
-      const ctrl  = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 1800);
-      const res   = await fetch(`${SERVER_BASE}/api/ping`, { signal: ctrl.signal });
-      clearTimeout(timer);
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      if (execBtn) {
-        execBtn.style.display = 'flex';
-        execBtn.title = `Executar via servidor local (${data.user || 'localhost'})`;
-      }
-      return data.token;
-    } catch {
-      if (execBtn) execBtn.style.display = 'none';
-      return null;
-    }
-  }
-
-  function setStatus(type, text) {
-    if (!termSt) return;
-    termSt.textContent = text;
-    termSt.className = `terminal-status-badge terminal-st-${type}`;
-  }
-
-  function addLine(text, hint) {
-    const div = document.createElement('div');
-    div.className = 'tline';
-    const lower = (text || '').toLowerCase();
-    if (hint === 'error' || text.includes('❌') || lower.includes('falha'))
-      div.classList.add('tl-error');
-    else if (text.includes('✅') || lower.includes('sucesso') || lower.includes('desabilitado'))
-      div.classList.add('tl-success');
-    else if (text.includes('⚠') || lower.includes('warning'))
-      div.classList.add('tl-warn');
-    else if (text.includes('🔑') || text.includes('📂') || text.includes('📝') || text.includes('▶') || hint === 'info')
-      div.classList.add('tl-info');
-    div.textContent = text || '\u00a0';
-    termOut.appendChild(div);
-    termOut.scrollTop = termOut.scrollHeight;
+  function syncBtn() {
+    if (!execBtn) return;
+    execBtn.style.display = window._serverToken ? 'flex' : 'none';
   }
 
   if (execBtn) {
     execBtn.addEventListener('click', async () => {
-      const script = execBtn._script;
-      if (!script) { showToast('Gere o script primeiro.', '#f59e0b'); return; }
-      const token = await getToken();
-      if (!token) { showToast('Servidor offline. Execute Start-Server.ps1.', '#f59e0b'); return; }
+      const loteData = execBtn._loteData;
+      if (!loteData) { showToast('Gere o script primeiro.', '#f59e0b'); return; }
 
-      termPanel.style.display = 'block';
-      termOut.innerHTML = '';
-      setStatus('running', '⏳ Executando...');
-      addLine('⚡ Enviando script ao servidor local...', 'info');
-      termPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-      try {
-        const ctrl  = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 315000);
-        const res = await fetch(`${SERVER_BASE}/api/run`, {
-          method : 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Server-Token': token },
-          body   : JSON.stringify({ script }),
-          signal : ctrl.signal,
-        });
-        clearTimeout(timer);
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || `Erro HTTP ${res.status}`);
-        }
-        const data = await res.json();
-        termOut.innerHTML = '';
-        for (const line of (data.lines || [])) {
-          addLine(line);
-          await new Promise(r => setTimeout(r, 20));
-        }
-        if (data.success) {
-          setStatus('success', '✅ Concluído');
-          showToast('Lote processado com sucesso! ✓');
-        } else {
-          setStatus('error', `❌ Falhou (código ${data.exitCode})`);
-          showToast('Falhou — veja o terminal.', '#ef4444');
-        }
-      } catch (err) {
-        addLine(`❌ ${err.message}`, 'error');
-        setStatus('error', 'Erro de comunicação');
-        showToast('Erro ao comunicar com o servidor.', '#ef4444');
-      }
+      const result = await window._chamarEndpoint(
+        '/api/desabilitar-lote', 'POST', loteData,
+        termPanel, termOut, termSt
+      );
+      if (result && result.success)
+        showToast(`${result.sucesso || '?'} conta(s) desabilitada(s) com sucesso! ✓`);
     });
   }
 
@@ -3599,8 +3728,8 @@ function generateBulkDisableScript(users, reason, moveOu, targetOu, expirePasswo
     termPanel.style.display = 'none';
   });
 
-  getToken();
-  setInterval(getToken, 15000);
+  syncBtn();
+  setInterval(syncBtn, 3000);
 })();
 
 
@@ -3835,12 +3964,11 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
 
 /* ═══════════════════════════════════════════════════════════════
    MONITOR DE USUÁRIOS BLOQUEADOS
-   Polling a cada 60s via Start-Server.ps1 → Get-ADUser LockedOut
-   Botão Desbloquear executa Unlock-ADAccount via /api/run
+   Polling a cada 60s via GET /api/bloqueados
+   Botão Desbloquear chama POST /api/desbloquear (JSON)
 ═══════════════════════════════════════════════════════════════ */
 (function LockedUsersMonitor() {
-  const SERVER_PORT   = (window.APP_CONFIG && window.APP_CONFIG.serverPort) ? window.APP_CONFIG.serverPort : 7510;
-  const SERVER_BASE   = 'http://localhost:' + SERVER_PORT;
+  const SERVER_BASE   = window._SERVER_BASE || 'http://localhost:7510';
   const POLL_INTERVAL = 60;
 
   const offlineBanner = document.getElementById('lockedOfflineBanner');
@@ -3863,83 +3991,16 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
 
   if (!tableEl) return;
 
-  let serverToken    = null;
   let countdownTimer = null;
   let secondsLeft    = POLL_INTERVAL;
   let isChecking     = false;
   let allLockedUsers = [];
 
-  const QUERY_SCRIPT = [
-    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
-    'Import-Module ActiveDirectory -ErrorAction Stop',
-    '$locked = @(Search-ADAccount -LockedOut -UsersOnly -ErrorAction Stop | Get-ADUser -Properties DisplayName,SamAccountName,LockedOut,BadLogonCount,LastBadPasswordAttempt,Department,Title,Enabled -ErrorAction Stop)',
-    '$arr = @($locked | ForEach-Object {',
-    '    [PSCustomObject]@{',
-    '        sam        = [string]$_.SamAccountName',
-    '        display    = if ($_.DisplayName) { [string]$_.DisplayName } else { [string]$_.SamAccountName }',
-    '        department = if ($_.Department)  { [string]$_.Department  } else { "" }',
-    '        title      = if ($_.Title)       { [string]$_.Title       } else { "" }',
-    '        badCount   = [int]$(if ($_.BadLogonCount) { $_.BadLogonCount } else { 0 })',
-    '        lastBad    = if ($_.LastBadPasswordAttempt) { $_.LastBadPasswordAttempt.ToString("dd/MM/yyyy HH:mm:ss") } else { "" }',
-    '        enabled    = ($_.Enabled -eq $true)',
-    '    }',
-    '})',
-    '$json = if ($arr.Count -eq 0) { "[]" } elseif ($arr.Count -eq 1) { "[" + ($arr[0] | ConvertTo-Json -Depth 2 -Compress) + "]" } else { $arr | ConvertTo-Json -Depth 2 -Compress }',
-    'Write-Output $json',
-  ].join('\n');
-
-  function buildUnlockScript(sam) {
-    var e = sam.replace(/'/g, "''");
-    return [
-      'Import-Module ActiveDirectory -ErrorAction Stop',
-      'try {',
-      "    Unlock-ADAccount -Identity '" + e + "' -ErrorAction Stop",
-      "    Write-Host \"[OK] Conta '" + e + "' desbloqueada com sucesso!\"",
-      "    $u = Get-ADUser -Identity '" + e + "' -Properties LockedOut -ErrorAction SilentlyContinue",
-      '    if ($u -and -not $u.LockedOut) { Write-Host "   Verificado: conta agora desbloqueada." }',
-      '} catch {',
-      "    Write-Error \"[ERRO] Falha ao desbloquear '" + e + "': $_\"",
-      '    exit 1',
-      '}',
-    ].join('\n');
-  }
-
-  async function pingServer() {
-    try {
-      var ctrl  = new AbortController();
-      var timer = setTimeout(function() { ctrl.abort(); }, 1800);
-      var res   = await fetch(SERVER_BASE + '/api/ping', { signal: ctrl.signal });
-      clearTimeout(timer);
-      if (!res.ok) throw new Error();
-      var data  = await res.json();
-      serverToken = data.token;
-      return true;
-    } catch (_) { serverToken = null; return false; }
-  }
-
-  async function runScript(scriptContent) {
-    var online = await pingServer();
-    if (!online || !serverToken) return null;
-    var ctrl  = new AbortController();
-    var timer = setTimeout(function() { ctrl.abort(); }, 60000);
-    try {
-      var res = await fetch(SERVER_BASE + '/api/run', {
-        method : 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Server-Token': serverToken },
-        body   : JSON.stringify({ script: scriptContent }),
-        signal : ctrl.signal,
-      });
-      clearTimeout(timer);
-      if (res.status === 401) { serverToken = null; return null; }
-      if (!res.ok) return null;
-      return await res.json();
-    } catch (_) { clearTimeout(timer); return null; }
-  }
-
+  /* ── Status UI ── */
   function setStatus(state, text) {
     if (!statusBar) return;
     statusBar.style.display = 'flex';
-    if (statusDot)  statusDot.className   = 'locked-status-dot locked-dot-' + state;
+    if (statusDot)  statusDot.className    = 'locked-status-dot locked-dot-' + state;
     if (statusText) statusText.textContent = text;
   }
 
@@ -3966,6 +4027,8 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
     termOut.appendChild(div);
     termOut.scrollTop = termOut.scrollHeight;
   }
+
+  /* ── Renderiza tabela de usuários bloqueados ── */
 
   function renderTable(users) {
     var count = users.length;
@@ -4024,7 +4087,31 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
     addTermLine('Desbloqueando conta: ' + sam, 'info');
     if (termPanel) termPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-    var result = await runScript(buildUnlockScript(sam));
+    // Usa o endpoint REST direto em vez de gerar um script PS1
+    var token = window._serverToken;
+    if (!token) {
+      setTermStatus('error', 'Servidor offline');
+      addTermLine('[ERRO] Servidor offline.', 'error');
+      showToast('Servidor offline.', '#ef4444');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg> Desbloquear';
+      }
+      return;
+    }
+
+    try {
+      var ctrl  = new AbortController();
+      var timer = setTimeout(function() { ctrl.abort(); }, 30000);
+      var res   = await fetch(SERVER_BASE + '/api/desbloquear', {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Server-Token': token },
+        body   : JSON.stringify({ sam: sam }),
+        signal : ctrl.signal,
+      });
+      clearTimeout(timer);
+      var result = res.ok ? await res.json() : null;
+    } catch (_) { var result = null; }
 
     if (!result) {
       setTermStatus('error', 'Erro de comunicacao');
@@ -4071,9 +4158,9 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
     if (checkNowBtn) checkNowBtn.disabled = true;
     setStatus('checking', 'Verificando usuarios bloqueados...');
 
-    var online = await pingServer();
+    var token = window._serverToken;
 
-    if (!online) {
+    if (!token) {
       if (offlineBanner) offlineBanner.style.display = 'flex';
       if (countdownWrap) countdownWrap.style.display = 'none';
       if (checkNowBtn)   checkNowBtn.disabled = true;
@@ -4086,29 +4173,33 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
     if (checkNowBtn)   checkNowBtn.disabled = false;
     if (countdownWrap) countdownWrap.style.display = 'flex';
 
-    var result = await runScript(QUERY_SCRIPT);
+    // Usa endpoint REST /api/bloqueados ao invés de executar script PS1
+    try {
+      var ctrl  = new AbortController();
+      var timer = setTimeout(function() { ctrl.abort(); }, 30000);
+      var res   = await fetch(SERVER_BASE + '/api/bloqueados', {
+        headers: { 'X-Server-Token': token },
+        signal : ctrl.signal,
+      });
+      clearTimeout(timer);
 
-    if (!result) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var data = await res.json();
+
+      if (!data.success && data.error) {
+        setStatus('error', 'Erro ao consultar o AD: ' + data.error);
+        isChecking = false;
+        return;
+      }
+
+      allLockedUsers = Array.isArray(data.users) ? data.users : [];
+    } catch (e) {
       setStatus('error', 'Erro ao consultar o AD');
       isChecking = false;
       return;
     }
 
-    var users = [];
-    try {
-      var jsonLine = (result.lines || []).find(function(l) {
-        var t = l.trim();
-        return t.startsWith('[') || t.startsWith('{');
-      });
-      if (jsonLine) {
-        var parsed = JSON.parse(jsonLine);
-        users = Array.isArray(parsed) ? parsed : [parsed];
-      }
-    } catch (_) { users = []; }
-
-    allLockedUsers = users;
     applyLockedFilter();
-
     resetCountdown();
     isChecking = false;
   }
@@ -4166,12 +4257,16 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
 
   window._lockedMonitorCheckNow = checkLockedUsers;
 
-  pingServer().then(function(online) {
+  // Usa o token global do servidor (gerenciado pelo módulo principal)
+  function checkOnlineState() {
+    var online = !!window._serverToken;
     if (online) {
       if (offlineBanner) offlineBanner.style.display = 'none';
       if (checkNowBtn)   checkNowBtn.disabled = false;
     } else {
       if (offlineBanner) offlineBanner.style.display = 'flex';
     }
-  });
+  }
+  checkOnlineState();
+  setInterval(checkOnlineState, 3000);
 })();
