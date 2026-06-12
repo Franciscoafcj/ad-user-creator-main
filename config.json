@@ -3,5 +3,6 @@
   "dominioEmail"  : "orsegups.com.br",
   "ouPadrao"      : "",
   "logDirectory"  : "logs",
-  "abrirNavegador": true
+  "abrirNavegador": true,
+  "reportsDirectory": "C:\\Users\\francisco.correa\\Desktop\\Scripts\\Hardware-analises-main\\Hardware-analises-main\\historico"
 }

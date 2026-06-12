@@ -82,6 +82,13 @@
                 <span class="info-value" id="sysValStatus"><span class="status-dot dot-red"></span> Offline</span>
               </div>
               <div class="sys-info-row">
+                <span class="info-label">M365 / Cloud:</span>
+                <span class="info-value" id="sysValM365"><span class="status-dot dot-red"></span> Offline</span>
+              </div>
+              <div class="sys-info-row">
+                <button type="button" class="btn-win" id="btnConnectM365" style="width: 100%; padding: 1px 4px; font-size: 9px; min-height: 18px; margin-top: -1px; display: none;">Conectar M365</button>
+              </div>
+              <div class="sys-info-row">
                 <span class="info-label">Domínio:</span>
                 <span class="info-value text-highlight" id="sysValDomain">orsegups.com.br</span>
               </div>
@@ -289,6 +296,28 @@
             </label>
           </div>
 
+          <!-- Integração M365 -->
+          <div class="m365-section border-inset" id="m365FormSection" style="margin-top: 15px; padding: 10px; background: var(--win-bg); display: none; margin-bottom: 15px;">
+            <div style="font-weight: bold; font-size: 11px; margin-bottom: 8px; text-transform: uppercase; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; color: var(--win-fg);">Licenças & Grupos M365</div>
+            
+            <!-- Licença -->
+            <div class="form-group" style="margin-bottom: 10px;">
+              <label for="m365License">Atribuir Licença M365</label>
+              <select id="m365License" style="width: 100%; height: 24px; font-family: inherit; font-size: 11px; background: var(--win-white); border: 1px solid var(--win-gray);">
+                <option value="">-- Nenhuma licença selecionada --</option>
+              </select>
+            </div>
+
+            <!-- Grupos M365 -->
+            <div class="form-group" style="margin-bottom: 0;">
+              <label style="margin-bottom: 4px; display: block;">Adicionar a Grupos da Nuvem</label>
+              <input type="text" id="m365GroupsSearch" placeholder="Pesquisar grupos da nuvem..." style="width: 100%; height: 22px; font-family: inherit; font-size: 11px; padding: 2px 6px; margin-bottom: 6px; border: 1px solid var(--win-gray); background: var(--win-white); box-sizing: border-box;" />
+              <div id="m365GroupsContainer" style="max-height: 145px; overflow-y: auto; background: var(--win-white); border: 1px solid var(--win-gray); padding: 6px 4px; display: flex; flex-direction: column; gap: 2px; font-size: 10px;">
+                <span style="opacity: 0.5; padding: 4px;">Carregando grupos do M365...</span>
+              </div>
+            </div>
+          </div>
+
           <button type="submit" class="btn-generate" id="generateBtn">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="16 18 22 12 16 6" />
@@ -364,6 +393,39 @@
             </div>
           </div>
           <div class="terminal-output" id="terminalOutput"></div>
+        </div>
+
+        <!-- Painel de Informações do Usuário Criado -->
+        <div class="success-info-panel" id="successInfoPanel" style="display:none">
+          <div class="success-info-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            <span>Usuário Criado com Sucesso</span>
+          </div>
+          <div class="success-info-body">
+            <div class="success-info-row">
+              <span class="success-info-label">Nome:</span>
+              <span class="success-info-value" id="createdUserName"></span>
+            </div>
+            <div class="success-info-row">
+              <span class="success-info-label">E-mail:</span>
+              <span class="success-info-value" id="createdUserEmail"></span>
+            </div>
+            <div class="success-info-row">
+              <span class="success-info-label">Senha:</span>
+              <span class="success-info-value text-password" id="createdUserPassword"></span>
+            </div>
+          </div>
+          <div class="success-info-footer">
+            <button type="button" class="btn-sm btn-copy-all" id="copyCreatedInfoBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" style="margin-right:4px;">
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              Copiar Credenciais
+            </button>
+          </div>
         </div>
       </section>
     </div>
@@ -744,6 +806,17 @@
                   <span class="slider"></span>
                 </label>
               </div>
+
+              <!-- Opção M365 (Oculta se M365 offline) -->
+              <div class="form-group toggle-row" id="disableM365Row" style="display: none;">
+                <label class="toggle-label" for="disableRemoveLicensesM365">
+                  <span>Remover licenças e grupos M365 (Nuvem / Exchange)</span>
+                </label>
+                <label class="switch">
+                  <input type="checkbox" id="disableRemoveLicensesM365" />
+                  <span class="slider"></span>
+                </label>
+              </div>
             </div>
 
             <button type="button" class="btn-generate btn-danger-gradient" id="generateDisableBtn" disabled>
@@ -933,6 +1006,17 @@
                   </label>
                   <label class="switch">
                     <input type="checkbox" id="disableBulkExpire" checked />
+                    <span class="slider"></span>
+                  </label>
+                </div>
+
+                <!-- Opção M365 Lote (Oculta se M365 offline) -->
+                <div class="form-group toggle-row" id="disableBulkM365Row" style="display: none;">
+                  <label class="toggle-label" for="disableBulkRemoveLicensesM365">
+                    <span>Remover licenças e grupos M365 (Nuvem / Exchange)</span>
+                  </label>
+                  <label class="switch">
+                    <input type="checkbox" id="disableBulkRemoveLicensesM365" />
                     <span class="slider"></span>
                   </label>
                 </div>
@@ -1153,6 +1237,219 @@
 
     </div>
   </div><!-- /panelLocked -->
+
+  <!-- ═══════════════════════════════════════════════════════
+       PAINEL: Computadores — Leitor de JSON
+  ════════════════════════════════════════════════════════ -->
+  <div class="computers-panel" id="panelComputers" style="display:none">
+    <div class="container">
+      
+      <!-- Header do painel -->
+      <div class="locked-panel-header">
+        <div class="locked-panel-title">
+          <div class="locked-panel-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+          </div>
+          <div>
+            <h2>Leitor de Diagnóstico — Hardware</h2>
+            <p>Importe arquivos JSON de diagnóstico para visualizar as especificações</p>
+          </div>
+        </div>
+        <div class="locked-panel-actions" style="align-items: center; gap: 12px;">
+          <button class="btn-check-now" id="compClearAllBtn" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+              <path d="M10 11v6"/><path d="M14 11v6"/>
+            </svg>
+            Limpar Tudo
+          </button>
+        </div>
+      </div>
+
+      <!-- Layout de colunas -->
+      <div class="card-grid" style="grid-template-columns: 300px 1fr;">
+        
+        <!-- CARD ESQUERDO: Upload + Lista de Arquivos -->
+        <section class="card form-card" style="height: 620px; display: flex; flex-direction: column;">
+          <div class="card-header" style="flex-shrink:0;">
+            <h2>Arquivos JSON</h2>
+            <p>Importe relatórios de diagnóstico</p>
+          </div>
+          
+          <!-- Zona de Upload -->
+          <div style="padding: 10px; flex-shrink: 0; background: var(--win-bg); border-bottom: 1px solid var(--win-gray);">
+            <div class="comp-upload-zone" id="compUploadZone" style="border: 2px dashed var(--win-fg); background: var(--win-white); padding: 14px 10px; text-align: center; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 70px; transition: background 0.1s;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width: 22px; height: 22px; opacity: 0.5; margin-bottom: 4px;">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <span style="font-size: 10px; font-weight: bold;">Arraste arquivos JSON ou clique aqui</span>
+              <span style="font-size: 9px; color: var(--win-gray); margin-top: 2px;">(Suporta múltiplos arquivos)</span>
+            </div>
+            <input type="file" id="compFileInput" multiple accept=".json" style="display:none;" />
+          </div>
+
+          <!-- Lista de arquivos carregados -->
+          <div style="flex: 1; overflow-y: auto; background-color: var(--win-white);">
+            <div id="compFileList" style="display: flex; flex-direction: column;">
+              <!-- Populado dinamicamente -->
+            </div>
+            <div id="compFileListEmpty" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 30px 16px; text-align: center; color: var(--win-gray);">
+              <svg viewBox="0 0 64 64" fill="none" style="width: 40px; height: 40px; margin-bottom: 8px; opacity: 0.3;">
+                <rect x="12" y="8" width="40" height="48" rx="4" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"/>
+                <path d="M24 24h16M24 32h12M24 40h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <span style="font-size: 11px; font-weight: bold;">Nenhum arquivo carregado</span>
+              <span style="font-size: 10px; margin-top: 4px;">Arraste arquivos JSON acima para começar</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- CARD DIREITO: Visualização do JSON -->
+        <section class="card output-card" style="height: 620px; display: flex; flex-direction: column;">
+          <div class="card-header" style="flex-shrink:0;">
+            <h2>Especificações do Computador</h2>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <p id="compHeaderName">Nenhum arquivo selecionado</p>
+              <span id="compHeaderDate" style="font-size: 10px; color: var(--win-gray); display: none;"></span>
+            </div>
+          </div>
+          
+          <!-- Estado Vazio -->
+          <div id="compDetailsEmpty" style="display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; padding: 40px; text-align: center; background: var(--win-bg);">
+            <svg viewBox="0 0 64 64" fill="none" style="width: 48px; height: 48px; margin-bottom: 12px; opacity: 0.25;">
+              <rect x="8" y="4" width="48" height="56" rx="4" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"/>
+              <path d="M20 20h24M20 28h18M20 36h24M20 44h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+            </svg>
+            <p style="font-weight: bold; font-size: 13px; opacity: 0.6;">Nenhum relatório selecionado</p>
+            <p style="font-size: 11px; color: var(--win-gray); max-width: 280px; margin-top: 6px;">
+              Importe um arquivo JSON de diagnóstico e selecione-o na lista à esquerda para visualizar os dados.
+            </p>
+          </div>
+
+          <!-- Dados do Hardware (Oculto por padrão) -->
+          <div id="compDetailsContent" style="display: none; padding: 14px; overflow-y: auto; flex: 1; flex-direction: column; gap: 12px; background: var(--win-white); color: var(--win-fg);">
+            <!-- Preenchido dinamicamente pelo JS -->
+          </div>
+        </section>
+
+      </div><!-- /card-grid -->
+
+    </div>
+  </div><!-- /panelComputers -->
+
+  <!-- ═══════════════════════════════════════════════════════
+       PAINEL: Ativar M365 (Licenças e Grupos)
+  ════════════════════════════════════════════════════════ -->
+  <div class="locked-panel" id="panelM365" style="display:none">
+    <div class="container">
+      <div class="card-grid">
+        <!-- CARD ESQUERDO: Atribuição -->
+        <section class="card form-card" style="height: 620px; display: flex; flex-direction: column;">
+          <div class="card-header" style="flex-shrink:0;">
+            <h2>Ativação M365 (Manual)</h2>
+            <p>Aplique licenças e grupos diretamente na nuvem</p>
+          </div>
+
+          <div style="flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; background: var(--win-white);">
+            
+            <!-- Seleção de Usuário do AD -->
+            <div class="form-group">
+              <label for="m365ActUserSearch">Buscar Usuário do AD (para preenchimento)</label>
+              <div class="user-search-wrap" id="m365ActSearchWrap">
+                <div class="user-search-input-wrap">
+                  <svg class="user-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  <input type="text" id="m365ActUserSearch" placeholder="Buscar por nome ou login..." autocomplete="off" />
+                  <button type="button" class="user-search-clear" id="clearM365ActUser" style="display:none" title="Limpar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </div>
+                <div class="user-dropdown" id="m365ActUserDropdown" style="display:none"></div>
+
+                <!-- Chip do usuário selecionado -->
+                <div class="disable-user-chip" id="m365ActUserChip" style="display:none">
+                  <div class="disable-chip-avatar" id="m365ActChipAvatar"></div>
+                  <div class="disable-chip-info">
+                    <div class="disable-chip-name" id="m365ActChipName"></div>
+                    <div class="disable-chip-meta" id="m365ActChipMeta"></div>
+                  </div>
+                  <button type="button" class="template-chip-remove" id="removeM365ActUser" title="Remover">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- UPN / Email de Destino -->
+            <div class="form-group">
+              <label for="m365ActEmail">User Principal Name (E-mail M365) <span class="req">*</span></label>
+              <input type="email" id="m365ActEmail" placeholder="usuario@orsegups.com.br" style="width:100%; box-sizing:border-box; height:24px; padding:2px 6px; font-family:inherit; font-size:11px;" />
+            </div>
+
+            <!-- Seleção de Licença M365 -->
+            <div class="form-group">
+              <label for="m365ActLicense">Atribuir Licença</label>
+              <select id="m365ActLicense" style="width: 100%; height: 24px; background: var(--win-white); border: 1px solid var(--win-gray); font-family:inherit; font-size:11px;">
+                <option value="">-- Nenhuma licença selecionada --</option>
+              </select>
+            </div>
+
+            <!-- Grupos M365 -->
+            <div class="form-group" style="margin-bottom: 0;">
+              <label style="margin-bottom: 4px; display: block;">Adicionar a Grupos da Nuvem</label>
+              <input type="text" id="m365ActGroupsSearch" placeholder="Pesquisar grupos da nuvem..." style="width: 100%; height: 22px; padding: 2px 6px; margin-bottom: 6px; border: 1px solid var(--win-gray); background: var(--win-white); box-sizing: border-box; font-family:inherit; font-size:11px;" />
+              <div id="m365ActGroupsContainer" style="max-height: 150px; overflow-y: auto; background: var(--win-white); border: 1px solid var(--win-gray); padding: 6px 4px; display: flex; flex-direction: column; gap: 2px; font-size: 10px;">
+                <span style="opacity: 0.5; padding: 4px;">Conecte ao M365 na barra lateral para carregar grupos.</span>
+              </div>
+            </div>
+
+          </div>
+
+          <div style="padding: 10px; background: var(--win-bg); border-top: 1px solid var(--win-gray); flex-shrink:0;">
+            <button type="button" class="btn-generate btn-primary-gradient" id="btnM365ActApply" style="width:100%">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px; height:14px; margin-right:4px; vertical-align:middle;">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+              Aplicar Licenças e Grupos na Nuvem
+            </button>
+          </div>
+        </section>
+
+        <!-- CARD DIREITO: Terminal / Log de Execução -->
+        <section class="card output-card" style="height: 620px; display: flex; flex-direction: column;">
+          <div class="card-header" style="flex-shrink:0;">
+            <h2>Terminal de Ativação Cloud</h2>
+            <p>Acompanhe a execução das alterações no Azure/Exchange em tempo real</p>
+          </div>
+          
+          <div class="terminal-panel" id="m365ActTerminalPanel" style="display:flex; flex:1; flex-direction:column; margin:0; border:none; height:100%;">
+            <div class="terminal-header" style="flex-shrink:0;">
+              <div class="terminal-title">m365-activation-log.sh</div>
+              <div class="terminal-status" id="m365ActTerminalStatus">Pronto</div>
+            </div>
+            <div class="terminal-output" id="m365ActTerminalOutput" style="flex:1; overflow-y:auto; font-family:var(--font-mono); font-size:10px; background:#000; color:#0f0; padding:10px; border:1px inset var(--win-gray); height:420px; box-sizing:border-box;">
+              Aguardando início do processo... Conecte ao M365 no painel lateral antes de iniciar.
+            </div>
+            <div style="padding:8px; background:var(--win-bg); border-top:1px solid var(--win-gray); display:flex; justify-content:flex-end; flex-shrink:0;">
+              <button class="btn-sm" id="m365ActTerminalClearBtn">Limpar Log</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
       </div><!-- /window-body -->
     </div><!-- /desktop-window -->
   </div><!-- /desktop-environment -->
@@ -1186,25 +1483,56 @@
           <div class="tree-root" id="adTree"></div>
         </div>
 
-        <!-- Coluna direita: Detalhes + Gerenciar -->
-        <div class="detail-panel border-inset">
-          <div class="detail-selected" id="detailSelected">
-            <div class="detail-icon" id="detailIcon">📁</div>
-            <div id="detailName" class="detail-name">Nenhuma pasta selecionada</div>
-            <div id="detailDn" class="detail-dn">—</div>
+        <!-- Coluna direita: Detalhes + Grade de Usuários (Estilo RSAT AD DC) -->
+        <div class="detail-panel border-inset" style="display: flex; flex-direction: column; height: 100%; min-height: 0;">
+          <div class="detail-selected" id="detailSelected" style="flex-shrink: 0; padding: 8px 10px;">
+            <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
+              <div class="detail-icon" id="detailIcon" style="font-size: 24px; line-height: 1;">📁</div>
+              <div style="display: flex; flex-direction: column; min-width: 0; flex: 1; text-align: left;">
+                <div id="detailName" class="detail-name" style="font-size: 13px; font-weight: bold;">Nenhuma pasta selecionada</div>
+                <div id="detailDn" class="detail-dn" style="font-size: 9px; color: var(--win-gray); word-break: break-all;">—</div>
+              </div>
+            </div>
           </div>
 
-          <div class="ou-manager border-outset" style="padding: 10px; margin-top: 10px;">
-            <div class="ou-manager-title">Criar nova OU</div>
+          <!-- Barra de pesquisa de usuários dentro da OU -->
+          <div class="detail-user-search border-outset" id="detailUserSearchBox" style="display: none; padding: 6px 10px; margin-top: 6px; flex-shrink: 0;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 10px; font-weight: bold; color: var(--win-fg); white-space: nowrap;">Filtro:</span>
+              <input type="text" id="detailUserSearchInput" placeholder="Filtrar usuários por nome, login ou cargo..." style="flex: 1; height: 22px; font-size: 11px; padding: 2px 6px;" autocomplete="off" />
+            </div>
+          </div>
+
+          <!-- Tabela de Usuários (RSAT Grid) -->
+          <div class="detail-users-list border-inset" id="detailUsersList" style="flex: 1; overflow-y: auto; background-color: var(--win-white); margin-top: 6px; min-height: 0; display: none;">
+            <table class="rsat-grid-table" id="detailUsersTable" style="width: 100%; border-collapse: collapse; font-size: 11px;">
+              <thead>
+                <tr style="background-color: var(--sage-titlebar); color: var(--win-white); border-bottom: 1.5px solid var(--sage-border); position: sticky; top: 0; z-index: 10;">
+                  <th style="padding: 4px 6px; font-weight: bold; font-size: 10px;">Nome de Exibição</th>
+                  <th style="padding: 4px 6px; font-weight: bold; font-size: 10px; width: 120px;">Conta (SAM)</th>
+                  <th style="padding: 4px 6px; font-weight: bold; font-size: 10px; width: 130px;">Departamento</th>
+                </tr>
+              </thead>
+              <tbody id="detailUsersTableBody">
+                <!-- Linhas populadas dinamicamente -->
+              </tbody>
+            </table>
+            <div id="detailUsersEmpty" style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--win-gray); font-size: 11px; padding: 20px; text-align: center;">
+              Esta pasta não possui usuários carregados.
+            </div>
+          </div>
+
+          <div class="ou-manager border-outset" style="padding: 8px 10px; margin-top: 10px; flex-shrink: 0;">
+            <div class="ou-manager-title" style="font-size: 10px;">Criar nova OU</div>
             <div class="add-ou-form">
-              <select id="addOuParent" class="ou-select"></select>
-              <div class="add-ou-row" style="margin-top: 6px; display: flex; gap: 6px;">
-                <input type="text" id="addOuName" placeholder="Nome da nova OU (ex: TI)" />
-                <button type="button" class="btn-add-ou btn-sm" id="btnAddOu">Adicionar</button>
+              <select id="addOuParent" class="ou-select" style="font-size: 11px; height: 22px; padding: 0 4px;"></select>
+              <div class="add-ou-row" style="margin-top: 4px; display: flex; gap: 6px;">
+                <input type="text" id="addOuName" placeholder="Nome da nova OU (ex: TI)" style="font-size: 11px; height: 22px;" />
+                <button type="button" class="btn-add-ou btn-sm" id="btnAddOu" style="font-size: 11px; height: 22px; padding: 0 10px;">Adicionar</button>
               </div>
             </div>
             <div class="ou-list" id="ouList" style="display:none"></div>
-            <button type="button" class="btn-reset-tree" id="btnResetTree" style="margin-top:10px; width: 100%;">
+            <button type="button" class="btn-reset-tree" id="btnResetTree" style="margin-top: 6px; width: 100%; font-size: 10px; height: 22px;">
               Restaurar estrutura padrão
             </button>
           </div>
@@ -1320,6 +1648,8 @@
     </div>
   </div>
 
+
+
   <!-- ═══════════════════════════════════════════════════════
        BARRA DE TAREFAS CLÁSSICA (OS Taskbar)
   ═══════════════════════════════════════════════════════ -->
@@ -1371,6 +1701,14 @@
               <circle cx="12" cy="16" r="1" fill="currentColor" stroke="none"/>
             </svg>
             Bloqueados
+          </div>
+          <div class="start-item" id="startItemComputers">
+            <svg class="task-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+            Computadores
           </div>
           <div class="start-divider"></div>
           <div class="start-item" id="startItemHelp">
@@ -1436,6 +1774,22 @@
         </svg>
         <span>Bloqueados</span>
         <span class="locked-tab-badge" id="lockedTabBadge" style="display:none">0</span>
+      </button>
+      <button class="task-app-btn" id="tabBtnM365" role="tab" aria-selected="false" aria-controls="panelM365">
+        <!-- Ícone Cloud/Ativar clean -->
+        <svg class="task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 10h-.08A7 7 0 0 0 4.75 12.02A6 6 0 0 0 6 24h12a6 6 0 0 0 0-12z"/>
+        </svg>
+        <span>Ativar M365</span>
+      </button>
+      <button class="task-app-btn" id="tabBtnComputers" role="tab" aria-selected="false" aria-controls="panelComputers">
+        <!-- Ícone Computadores clean -->
+        <svg class="task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <line x1="8" y1="21" x2="16" y2="21"/>
+          <line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+        <span>Computadores</span>
       </button>
     </div>
 

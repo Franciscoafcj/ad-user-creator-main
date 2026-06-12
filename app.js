@@ -668,6 +668,9 @@ const summaryGrid= document.getElementById('summaryGrid');
 userForm.addEventListener('submit', function (e) {
   e.preventDefault();
 
+  const successInfoPanel = document.getElementById('successInfoPanel');
+  if (successInfoPanel) successInfoPanel.style.display = 'none';
+
   const fullName  = fullNameInput.value.trim();
   const cpfRaw    = cpfInput.value.trim();
   const password  = passwordInput.value;
@@ -1141,7 +1144,10 @@ const LS_KEY = 'ou_tree_custom';
 function getTree() {
   try {
     const saved = localStorage.getItem(LS_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
   } catch (_) {}
   return JSON.parse(JSON.stringify(DEFAULT_OU_TREE));
 }
@@ -1260,69 +1266,17 @@ function renderTree(filter) {
   }
 }
 
-/**
- * @param {boolean} parentMatched - true quando um ancestral já correspondeu ao filtro.
- *   Nesse caso, todos os descendentes devem ser exibidos (o usuário achou a pasta-pai
- *   e quer ver o que há dentro dela).
- */
-/**
- * Índice (cache) de usuários agrupados por OU (DN lowercase).
- * Construído uma vez e invalidado quando AD_DATA muda.
- */
-let _usersByOuCache = null;
-let _usersByOuSource = null; // referência para detectar mudança
-
-function _buildUsersIndex() {
-  if (!window.AD_DATA || !Array.isArray(window.AD_DATA.users)) return {};
-  // Só constrói se pelo menos um usuário tiver o campo 'ou'
-  if (!window.AD_DATA.users.some(u => u.ou)) return {};
-  const map = {};
-  for (const u of window.AD_DATA.users) {
-    if (!u.ou) continue;
-    const key = u.ou.toLowerCase();
-    if (!map[key]) map[key] = [];
-    map[key].push(u);
-  }
-  return map;
-}
-
-/** Retorna os usuários dentro de uma OU (por DN exato). Usa cache interno. */
-function getUsersInOU(dn) {
-  if (!dn || !window.AD_DATA) return [];
-  // Reconstrói o cache se AD_DATA mudou
-  if (_usersByOuSource !== window.AD_DATA.users) {
-    _usersByOuCache  = _buildUsersIndex();
-    _usersByOuSource = window.AD_DATA.users;
-  }
-  return _usersByOuCache[dn.toLowerCase()] || [];
-}
-
 function renderNode(node, parentTrail, container, filter, domain, parentMatched) {
   const trail = [...parentTrail, node.name];
   const dn    = node.exactDn || buildDN(trail, domain);
   const hasOuChildren = !!(node.children && node.children.length);
-
-  // Usuários que pertencem a este nó (só se AD_DATA tiver campo 'ou')
-  const usersInOu = getUsersInOU(dn);
-  const hasUsers  = usersInOu.length > 0;
-  const hasChildren = hasOuChildren || hasUsers;
+  const hasChildren = hasOuChildren; // Apenas sub-OUs na árvore, como no RSAT!
 
   const matchesSelf = !filter || node.name.toLowerCase().includes(filter.toLowerCase());
   const childrenHit = hasOuChildren && nodeOrChildMatches(node, filter);
 
-  // Verifica se algum usuário da OU bate no filtro (com precedência explícita)
-  let usersHit = false;
-  if (hasUsers && filter) {
-    const f = filter.toLowerCase();
-    usersHit = usersInOu.some(u =>
-      (u.displayName    || '').toLowerCase().includes(f) ||
-      (u.samAccountName || '').toLowerCase().includes(f) ||
-      (u.department     || '').toLowerCase().includes(f)
-    );
-  }
-
   // Oculta se: há filtro E nem este nó nem nenhum filho corresponde E o pai não correspondeu
-  if (filter && !matchesSelf && !childrenHit && !usersHit && !parentMatched) return;
+  if (filter && !matchesSelf && !childrenHit && !parentMatched) return;
 
   // Se este nó corresponde, seus filhos são exibidos independentemente do filtro
   const thisMatched = parentMatched || matchesSelf;
@@ -1338,7 +1292,7 @@ function renderNode(node, parentTrail, container, filter, domain, parentMatched)
     const childrenWrap = document.createElement('div');
     childrenWrap.className = 'tree-children';
 
-    // Primeiro: sub-OUs
+    // Sub-OUs
     if (hasOuChildren) {
       node.children.forEach(child =>
         renderNode(child, trail, childrenWrap, filter, domain, thisMatched)
@@ -1346,6 +1300,8 @@ function renderNode(node, parentTrail, container, filter, domain, parentMatched)
     }
 
     // Depois: usuários dentro desta OU (só quando há dados com campo 'ou')
+    const usersInOu = getUsersInOU(dn);
+    const hasUsers = usersInOu && usersInOu.length > 0;
     if (hasUsers) {
       const f = filter ? filter.toLowerCase() : '';
       const filtered = filter
@@ -1536,6 +1492,40 @@ function toggleExpand(id) {
   renderTree(treeSearchEl.value);
 }
 
+/**
+ * Índice (cache) de usuários agrupados por OU (DN lowercase).
+ * Construído uma vez e invalidado quando AD_DATA muda.
+ */
+let _usersByOuCache = null;
+let _usersByOuSource = null; // referência para detectar mudança
+
+function _buildUsersIndex() {
+  if (!window.AD_DATA || !Array.isArray(window.AD_DATA.users)) return {};
+  // Só constrói se pelo menos um usuário tiver o campo 'ou'
+  if (!window.AD_DATA.users.some(u => u && u.ou)) return {};
+  const map = {};
+  for (const u of window.AD_DATA.users) {
+    if (!u || !u.ou) continue;
+    const key = u.ou.toLowerCase();
+    if (!map[key]) map[key] = [];
+    map[key].push(u);
+  }
+  return map;
+}
+
+/** Retorna os usuários dentro de uma OU (por DN exato). Usa cache interno. */
+function getUsersInOU(dn) {
+  if (!dn || !window.AD_DATA) return [];
+  // Reconstrói o cache se AD_DATA mudou
+  if (_usersByOuSource !== window.AD_DATA.users) {
+    _usersByOuCache  = _buildUsersIndex();
+    _usersByOuSource = window.AD_DATA.users;
+  }
+  return _usersByOuCache[dn.toLowerCase()] || [];
+}
+
+let _currentOuUsers = [];
+
 function updateDetailPanel(node) {
   if (!node) {
     detailIconEl.textContent = '📁';
@@ -1543,15 +1533,168 @@ function updateDetailPanel(node) {
     detailDnEl.textContent   = '—';
     selectedPathEl.textContent = 'Nenhuma OU selecionada — será usada a OU padrão do domínio';
     selectedPathEl.classList.remove('active');
+    
+    // Oculta área de busca e listagem de usuários
+    const searchBox = document.getElementById('detailUserSearchBox');
+    const usersList = document.getElementById('detailUsersList');
+    if (searchBox) searchBox.style.display = 'none';
+    if (usersList) usersList.style.display = 'none';
+    
     _updateModalUserBanner(null);
     return;
   }
+  
   detailIconEl.textContent = '📂';
   detailNameEl.textContent = node.name;
   detailDnEl.textContent   = node.dn;
   selectedPathEl.textContent = node.dn;
   selectedPathEl.classList.add('active');
+  
+  // Busca usuários desta OU
+  const users = getUsersInOU(node.dn);
+  _currentOuUsers = users;
+  
+  // Mostra área de busca e listagem de usuários
+  const searchBox = document.getElementById('detailUserSearchBox');
+  const usersList = document.getElementById('detailUsersList');
+  if (searchBox) searchBox.style.display = 'block';
+  if (usersList) usersList.style.display = 'block';
+  
+  // Reseta campo de busca interna da OU
+  const searchInput = document.getElementById('detailUserSearchInput');
+  if (searchInput) searchInput.value = '';
+  
+  // Renderiza a tabela de usuários
+  renderRsatUsersList(users);
+  
   _updateModalUserBanner(_pendingTemplateUser);
+}
+
+function renderRsatUsersList(users, filterText) {
+  const tbody = document.getElementById('detailUsersTableBody');
+  const table = document.getElementById('detailUsersTable');
+  const emptyDiv = document.getElementById('detailUsersEmpty');
+  
+  if (!tbody || !table || !emptyDiv) return;
+  
+  tbody.innerHTML = '';
+  
+  const filter = (filterText || '').toLowerCase().trim();
+  const filtered = filter
+    ? users.filter(u => 
+        (u.displayName || '').toLowerCase().includes(filter) ||
+        (u.samAccountName || '').toLowerCase().includes(filter) ||
+        (u.department || '').toLowerCase().includes(filter) ||
+        (u.title || '').toLowerCase().includes(filter)
+      )
+    : users;
+    
+  if (filtered.length === 0) {
+    table.style.display = 'none';
+    emptyDiv.style.display = 'flex';
+    emptyDiv.textContent = filter 
+      ? 'Nenhum usuário corresponde ao filtro pesquisado.' 
+      : 'Esta pasta não possui usuários carregados.';
+    return;
+  }
+  
+  table.style.display = 'table';
+  emptyDiv.style.display = 'none';
+  
+  filtered.forEach(u => {
+    const tr = document.createElement('tr');
+    tr.className = 'rsat-user-tr';
+    if (_pendingTemplateUser && _pendingTemplateUser.samAccountName === u.samAccountName) {
+      tr.classList.add('rsat-selected-row');
+    }
+    
+    // Nome Completo
+    const tdName = document.createElement('td');
+    tdName.style.padding = '6px 8px';
+    tdName.style.display = 'flex';
+    tdName.style.alignItems = 'flex-start';
+    tdName.style.gap = '8px';
+    
+    const userIcon = document.createElement('span');
+    userIcon.textContent = '👤';
+    userIcon.style.fontSize = '12px';
+    userIcon.style.marginTop = '2px';
+    userIcon.style.flexShrink = '0';
+    
+    const textContainer = document.createElement('div');
+    textContainer.style.display = 'flex';
+    textContainer.style.flexDirection = 'column';
+    textContainer.style.gap = '3px';
+    textContainer.style.minWidth = '0';
+    
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = u.displayName || u.samAccountName;
+    nameSpan.style.fontWeight = 'bold';
+    nameSpan.style.fontSize = '11px';
+    nameSpan.style.lineHeight = '1.2';
+    
+    textContainer.appendChild(nameSpan);
+    
+    const groupsArray = Array.isArray(u.groups) ? u.groups : (typeof u.groups === 'string' ? [u.groups] : []);
+    if (groupsArray.length > 0) {
+      const groupsDiv = document.createElement('div');
+      groupsDiv.style.display = 'flex';
+      groupsDiv.style.flexWrap = 'nowrap';
+      groupsDiv.style.alignItems = 'center';
+      groupsDiv.style.gap = '3px';
+      
+      const maxVisible = 2;
+      const visibleGroups = groupsArray.slice(0, maxVisible);
+      
+      visibleGroups.forEach(group => {
+        const groupSpan = document.createElement('span');
+        groupSpan.className = 'rsat-group-badge';
+        groupSpan.textContent = group;
+        groupSpan.title = group; // Exibe o nome completo do grupo ao passar o mouse
+        groupsDiv.appendChild(groupSpan);
+      });
+      
+      if (groupsArray.length > maxVisible) {
+        const moreSpan = document.createElement('span');
+        moreSpan.className = 'rsat-group-badge rsat-group-more';
+        moreSpan.textContent = `+${groupsArray.length - maxVisible}`;
+        moreSpan.title = groupsArray.slice(maxVisible).join(', ');
+        groupsDiv.appendChild(moreSpan);
+      }
+      textContainer.appendChild(groupsDiv);
+    }
+    
+    tdName.appendChild(userIcon);
+    tdName.appendChild(textContainer);
+    
+    // SAM Account
+    const tdSam = document.createElement('td');
+    tdSam.style.padding = '5px 8px';
+    tdSam.style.fontFamily = 'var(--font-mono)';
+    tdSam.textContent = u.samAccountName;
+    
+    // Departamento
+    const tdDept = document.createElement('td');
+    tdDept.style.padding = '5px 8px';
+    tdDept.textContent = u.department || '—';
+    
+    tr.appendChild(tdName);
+    tr.appendChild(tdSam);
+    tr.appendChild(tdDept);
+    
+    tr.addEventListener('click', () => {
+      // Remove seleção anterior
+      tbody.querySelectorAll('.rsat-selected-row').forEach(row => {
+        row.classList.remove('rsat-selected-row');
+      });
+      tr.classList.add('rsat-selected-row');
+      
+      _pendingTemplateUser = u;
+      _updateModalUserBanner(u);
+    });
+    
+    tbody.appendChild(tr);
+  });
 }
 
 /** Exibe/oculta o banner de "usuário modelo selecionado" no rodapé do modal */
@@ -1602,6 +1745,13 @@ treeSearchEl.addEventListener('input', function () {
   }
   renderTree(term);
 });
+
+const detailUserSearchInput = document.getElementById('detailUserSearchInput');
+if (detailUserSearchInput) {
+  detailUserSearchInput.addEventListener('input', function() {
+    renderRsatUsersList(_currentOuUsers, this.value);
+  });
+}
 
 function expandAll(nodes) {
   nodes.forEach(n => {
@@ -2098,6 +2248,10 @@ function initWithADData() {
 
     })();
   }
+  
+  if (window._computersRefreshData) {
+    window._computersRefreshData();
+  }
 }
 
 
@@ -2385,7 +2539,9 @@ initUserSearch({
 
 (function () {
   const SERVER_PORT = 7510; // Lido do config.json pelo servidor; sincronize aqui se mudar
-  const SERVER_BASE = `http://localhost:${SERVER_PORT}`;
+  const SERVER_BASE = (window.location.protocol === 'http:' || window.location.protocol === 'https:')
+    ? `${window.location.protocol}//${window.location.host}`
+    : `http://localhost:${SERVER_PORT}`;
 
   // Exporta para acesso global (usado nos outros módulos abaixo)
   window._SERVER_BASE = SERVER_BASE;
@@ -2412,10 +2568,12 @@ initUserSearch({
       setServerIndicator(true, data.user, data.isAdmin);
       // Carrega dados do AD após confirmar que o servidor está on
       loadADData();
+      checkM365Status();
     } catch {
       window._serverToken = null;
       serverAvailable     = false;
       setServerIndicator(false);
+      updateM365UI(false);
       // Mesmo sem servidor, inicializa a UI (modo sem AD)
       initWithADData();
     }
@@ -2598,14 +2756,330 @@ initUserSearch({
 
       const result = await chamarEndpoint('/api/criar-usuario', 'POST', payload,
         terminalPanel, terminalOut, terminalSt);
-      if (result && result.success) showToast('Usuário criado com sucesso! ✓');
+      if (result && result.success) {
+        showToast('Usuário criado com sucesso! ✓');
+        const successInfoPanel = document.getElementById('successInfoPanel');
+        const createdUserName = document.getElementById('createdUserName');
+        const createdUserEmail = document.getElementById('createdUserEmail');
+        const createdUserPassword = document.getElementById('createdUserPassword');
+        if (successInfoPanel && createdUserName && createdUserEmail && createdUserPassword) {
+          createdUserName.textContent = payload.nomeCompleto;
+          createdUserEmail.textContent = payload.email;
+          createdUserPassword.textContent = payload.senha;
+          successInfoPanel.style.display = 'block';
+          successInfoPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        // Se houver licenças ou grupos do M365 selecionados, aplicar na nuvem
+        const selectedLicense = m365LicenseSelect ? m365LicenseSelect.value : '';
+        const selectedGroups = [];
+        selectedM365GroupsMap.forEach(g => {
+          selectedGroups.push({
+            id: g.id,
+            source: g.source,
+            name: g.name
+          });
+        });
+
+        if (m365Connected && (selectedLicense || selectedGroups.length > 0)) {
+          const addLine = (t, h) => { appendTermLineInto(terminalOut, t, h); };
+          addLine('\n⚡ Aplicando configurações na Nuvem (Microsoft 365 / Exchange Online)...', 'info');
+          
+          const m365Payload = {
+            userPrincipalName: payload.email,
+            licenses: selectedLicense ? [selectedLicense] : [],
+            groups: selectedGroups
+          };
+
+          try {
+            const m365Res = await fetch(`${SERVER_BASE}/api/m365/aplicar`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-Server-Token': window._serverToken },
+              body: JSON.stringify(m365Payload)
+            });
+            if (m365Res.ok) {
+              const m365Data = await m365Res.json();
+              for (const line of (m365Data.lines || [])) {
+                addLine(line);
+                await new Promise(r => setTimeout(r, 20));
+              }
+              if (m365Data.success) {
+                showToast('M365 / Exchange aplicado com sucesso! ✓');
+              } else {
+                showToast('Algumas operações na nuvem falharam.', '#ef4444');
+              }
+            } else {
+              addLine('❌ Falha ao comunicar com o endpoint de M365 do servidor.', 'error');
+            }
+          } catch (err) {
+            addLine(`❌ Erro no M365: ${err.message}`, 'error');
+          }
+        }
+      }
+    });
+  }
+
+  // Copiar informações do usuário criado
+  const copyCreatedInfoBtn = document.getElementById('copyCreatedInfoBtn');
+  if (copyCreatedInfoBtn) {
+    copyCreatedInfoBtn.addEventListener('click', () => {
+      const name = document.getElementById('createdUserName')?.textContent || '';
+      const email = document.getElementById('createdUserEmail')?.textContent || '';
+      const password = document.getElementById('createdUserPassword')?.textContent || '';
+      const textToCopy = `Nome: ${name}\nE-mail: ${email}\nSenha: ${password}`;
+      copyText(textToCopy);
     });
   }
 
   document.getElementById('terminalClearBtn')?.addEventListener('click', () => {
     terminalOut.innerHTML = '';
     terminalPanel.style.display = 'none';
+    const successInfoPanel = document.getElementById('successInfoPanel');
+    if (successInfoPanel) successInfoPanel.style.display = 'none';
   });
+
+  /* ── M365 (Microsoft Graph & Exchange) Integration ── */
+  const btnConnectM365    = document.getElementById('btnConnectM365');
+  const sysValM365        = document.getElementById('sysValM365');
+  const m365FormSection   = document.getElementById('m365FormSection');
+  const m365LicenseSelect = document.getElementById('m365License');
+  const m365GroupsContainer = document.getElementById('m365GroupsContainer');
+  let m365Connected = false;
+  let loadedM365Groups = [];
+  const selectedM365GroupsMap = new Map();
+
+  // Dicionário de tradução dos SKU Part Numbers para nomes oficiais da Microsoft
+  const SKU_MAP = {
+    'O365_BUSINESS_ESSENTIALS': 'Microsoft 365 Business Basic',
+    'O365_BUSINESS_PREMIUM': 'Microsoft 365 Business Premium',
+    'O365_BUSINESS': 'Microsoft 365 Business Standard',
+    'SMB_BUSINESS': 'Microsoft 365 Business Standard',
+    'EXCHANGESTANDARD': 'Exchange Online (Plan 1)',
+    'EXCHANGEENTERPRISE': 'Exchange Online (Plan 2)',
+    'SPE_E3': 'Microsoft 365 E3',
+    'SPE_E5': 'Microsoft 365 E5',
+    'ENTERPRISEPACK': 'Office 365 E3',
+    'ENTERPRISEPREMIUM': 'Office 365 E5',
+    'DEVELOPER_PACK': 'Microsoft 365 E5 Developer',
+    'POWER_BI_PRO': 'Power BI Pro',
+    'POWER_BI_STANDARD': 'Power BI Free',
+    'TEAMS_ENTERPRISE': 'Microsoft Teams Enterprise',
+    'MCOPCOM': 'Microsoft 365 Copilot',
+    'ONEDRIVESTANDARD': 'OneDrive for Business (Plan 1)',
+    'ONEDRIVEENTERPRISE': 'OneDrive for Business (Plan 2)',
+    'PROJECT_PROFESSIONAL': 'Project Plan 3',
+    'VISIOPRO': 'Visio Plan 1',
+    'DYN365_CUSTOMER_VOICE_TRIAL': 'Dynamics 365 Customer Voice Trial',
+    'COPILOT_STUDIO_VIRAL_TRIAL': 'Microsoft Copilot Studio Viral Trial',
+    'FABRIC_FREE': 'Microsoft Fabric (Free)',
+    'POWERAPPS_DEVELOPER': 'Microsoft Power Apps for Developer',
+    'POWERAUTOMATE_FREE': 'Microsoft Power Automate Free',
+    'STREAM_TRIAL': 'Microsoft Stream Trial',
+    'PLANNER_PROJECT_PLAN3': 'Planner and Project Plan 3',
+    'VISIO_PLAN1': 'Visio Plan 1'
+  };
+
+  function getFriendlySkuName(skuPartNumber) {
+    if (SKU_MAP[skuPartNumber]) {
+      return SKU_MAP[skuPartNumber];
+    }
+    // Caso não esteja no mapeamento, formata de forma legível
+    return skuPartNumber
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  }
+
+  async function checkM365Status() {
+    if (!window._serverToken) {
+      updateM365UI(false);
+      return;
+    }
+    try {
+      const res = await fetch(`${SERVER_BASE}/api/m365/status`, {
+        headers: { 'X-Server-Token': window._serverToken }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const connected = data.graphConnected && data.exchangeConnected;
+        m365Connected = connected;
+        updateM365UI(connected, data.modulesInstalled);
+        if (connected) {
+          loadM365Data();
+        }
+      }
+    } catch {
+      updateM365UI(false);
+    }
+  }
+
+  function updateM365UI(connected, modules) {
+    const disableM365Row = document.getElementById('disableM365Row');
+    const disableBulkM365Row = document.getElementById('disableBulkM365Row');
+    if (sysValM365) {
+      if (connected) {
+        sysValM365.innerHTML = '<span class="status-dot dot-green"></span> Online';
+        if (btnConnectM365) btnConnectM365.style.display = 'none';
+        if (m365FormSection) m365FormSection.style.display = 'block';
+        if (disableM365Row) disableM365Row.style.display = 'flex';
+        if (disableBulkM365Row) disableBulkM365Row.style.display = 'flex';
+      } else {
+        sysValM365.innerHTML = '<span class="status-dot dot-red"></span> Offline';
+        if (m365FormSection) m365FormSection.style.display = 'none';
+        if (disableM365Row) disableM365Row.style.display = 'none';
+        if (disableBulkM365Row) disableBulkM365Row.style.display = 'none';
+        if (modules && modules.exchange && modules.graph) {
+          if (btnConnectM365) {
+            btnConnectM365.style.display = 'block';
+            btnConnectM365.textContent = 'Conectar M365';
+            btnConnectM365.disabled = false;
+          }
+        } else {
+          if (btnConnectM365) btnConnectM365.style.display = 'none';
+        }
+      }
+    }
+  }
+
+  async function connectM365() {
+    if (!window._serverToken) return;
+    if (btnConnectM365) {
+      btnConnectM365.disabled = true;
+      btnConnectM365.textContent = 'Conectando...';
+    }
+    showToast('Iniciando autenticação no Azure/M365. Veja a tela do servidor se abrir pop-up.', '#f59e0b');
+
+    terminalPanel.style.display = 'block';
+    terminalOut.innerHTML = '';
+    terminalPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    const addLine = (t, h) => { appendTermLineInto(terminalOut, t, h); };
+
+    try {
+      const res = await fetch(`${SERVER_BASE}/api/m365/conectar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Server-Token': window._serverToken }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        for (const line of (data.lines || [])) {
+          addLine(line);
+          await new Promise(r => setTimeout(r, 20));
+        }
+        if (data.success) {
+          showToast('Conectado ao M365 com sucesso! ✓');
+          checkM365Status();
+        } else {
+          showToast('Falha na conexão com o M365.', '#ef4444');
+          if (btnConnectM365) {
+            btnConnectM365.disabled = false;
+            btnConnectM365.textContent = 'Conectar M365';
+          }
+        }
+      }
+    } catch (err) {
+      addLine(`❌ Erro: ${err.message}`, 'error');
+      showToast('Erro ao comunicar com o servidor.', '#ef4444');
+      if (btnConnectM365) {
+        btnConnectM365.disabled = false;
+        btnConnectM365.textContent = 'Conectar M365';
+      }
+    }
+  }
+
+  async function loadM365Data() {
+    if (!window._serverToken || !m365Connected) return;
+
+    try {
+      const res = await fetch(`${SERVER_BASE}/api/m365/licencas`, {
+        headers: { 'X-Server-Token': window._serverToken }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (m365LicenseSelect) {
+          m365LicenseSelect.innerHTML = '<option value="">-- Nenhuma licença selecionada --</option>';
+          (data.licenses || []).forEach(lic => {
+            const opt = document.createElement('option');
+            opt.value = lic.skuId;
+            const friendlyName = getFriendlySkuName(lic.skuPartNumber);
+            opt.textContent = `${friendlyName} (${lic.availableUnits} disponíveis)`;
+            m365LicenseSelect.appendChild(opt);
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao obter licenças M365:', err);
+    }
+
+    function renderM365Groups(filterText = '') {
+      if (!m365GroupsContainer) return;
+      m365GroupsContainer.innerHTML = '';
+
+      const query = filterText.toLowerCase().trim();
+      const filtered = loadedM365Groups.filter(g => {
+        const nameMatch = g.name ? g.name.toLowerCase().includes(query) : false;
+        const mailMatch = g.mail ? g.mail.toLowerCase().includes(query) : false;
+        return nameMatch || mailMatch;
+      });
+
+      if (filtered.length === 0) {
+        m365GroupsContainer.innerHTML = '<span style="opacity: 0.5; padding: 4px;">Nenhum grupo correspondente encontrado.</span>';
+        return;
+      }
+
+      filtered.forEach(g => {
+        const isChecked = selectedM365GroupsMap.has(g.id);
+        const div = document.createElement('div');
+        div.style.display = 'flex';
+        div.style.alignItems = 'flex-start';
+        div.style.gap = '6px';
+        div.style.padding = '3px 4px';
+        div.style.borderBottom = '1px solid #f3f4f6';
+        div.innerHTML = `
+          <input type="checkbox" class="m365-group-cb" value="${escapeHTML(g.id)}" ${isChecked ? 'checked' : ''} id="cb_${escapeHTML(g.id)}" style="margin-top: 1px;">
+          <label for="cb_${escapeHTML(g.id)}" style="cursor:pointer; font-size:10px; line-height: 1.2; word-break: break-word;" title="${escapeHTML(g.name)} (${escapeHTML(g.mail)})">${escapeHTML(g.name)}<span style="opacity:0.6; font-size:8px; margin-left: 6px; font-weight: normal; white-space: nowrap;">[${escapeHTML(g.type)}]</span></label>
+        `;
+        
+        const cb = div.querySelector('input');
+        cb.addEventListener('change', (e) => {
+          if (e.target.checked) {
+            selectedM365GroupsMap.set(g.id, g);
+          } else {
+            selectedM365GroupsMap.delete(g.id);
+          }
+        });
+
+        m365GroupsContainer.appendChild(div);
+      });
+    }
+
+    const m365GroupsSearch = document.getElementById('m365GroupsSearch');
+    if (m365GroupsSearch && !m365GroupsSearch._hasListener) {
+      m365GroupsSearch.addEventListener('input', (e) => {
+        renderM365Groups(e.target.value);
+      });
+      m365GroupsSearch._hasListener = true;
+    }
+
+    try {
+      const res = await fetch(`${SERVER_BASE}/api/m365/grupos`, {
+        headers: { 'X-Server-Token': window._serverToken }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        loadedM365Groups = data.groups || [];
+        selectedM365GroupsMap.clear();
+        if (m365GroupsSearch) m365GroupsSearch.value = '';
+        renderM365Groups();
+      }
+    } catch (err) {
+      console.error('Erro ao obter grupos M365:', err);
+    }
+  }
+
+  if (btnConnectM365) {
+    btnConnectM365.addEventListener('click', connectM365);
+  }
 
   /* ── Inicialização ── */
   checkServer();
@@ -2620,16 +3094,20 @@ initUserSearch({
   const tabCreate  = document.getElementById('tabBtnCreate');
   const tabDisable = document.getElementById('tabBtnDisable');
   const tabLocked  = document.getElementById('tabBtnLocked');
+  const tabM365    = document.getElementById('tabBtnM365');
+  const tabComputers = document.getElementById('tabBtnComputers');
   const mainPanel  = document.querySelector('main.container');
   const disPanel   = document.getElementById('panelDisable');
   const lockPanel  = document.getElementById('panelLocked');
+  const m365Panel  = document.getElementById('panelM365');
+  const compPanel  = document.getElementById('panelComputers');
 
-  const allTabs   = [tabCreate, tabDisable, tabLocked].filter(Boolean);
-  const allPanels = [mainPanel, disPanel, lockPanel].filter(Boolean);
+  const allTabs   = [tabCreate, tabDisable, tabLocked, tabM365, tabComputers].filter(Boolean);
+  const allPanels = [mainPanel, disPanel, lockPanel, m365Panel, compPanel].filter(Boolean);
 
   let currentTabName = 'create';
 
-  // ── Alternância de Abas ────────────────────────────────────────
+  // -- Alternancia de Abas ----------------------------------------
   function showTab(name) {
     currentTabName = name;
     allTabs.forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
@@ -2649,6 +3127,14 @@ initUserSearch({
       if (tabLocked) { tabLocked.classList.add('active'); tabLocked.setAttribute('aria-selected', 'true'); }
       if (lockPanel) lockPanel.style.display = '';
       if (window._lockedMonitorCheckNow) window._lockedMonitorCheckNow();
+    } else if (name === 'm365') {
+      if (tabM365) { tabM365.classList.add('active'); tabM365.setAttribute('aria-selected', 'true'); }
+      if (m365Panel) m365Panel.style.display = '';
+      if (window._m365ActRefreshData) window._m365ActRefreshData();
+    } else if (name === 'computers') {
+      if (tabComputers) { tabComputers.classList.add('active'); tabComputers.setAttribute('aria-selected', 'true'); }
+      if (compPanel) compPanel.style.display = '';
+      if (window._computersRefreshData) window._computersRefreshData();
     }
   }
 
@@ -2681,7 +3167,29 @@ initUserSearch({
     });
   }
 
-  // ── Menu Iniciar e Itens ────────────────────────────────────────
+  if (tabM365) {
+    tabM365.addEventListener('click', () => {
+      const win = document.getElementById('mainOSWindow');
+      if (currentTabName === 'm365' && win && win.style.display !== 'none') {
+        win.style.display = 'none';
+      } else {
+        showTab('m365');
+      }
+    });
+  }
+
+  if (tabComputers) {
+    tabComputers.addEventListener('click', () => {
+      const win = document.getElementById('mainOSWindow');
+      if (currentTabName === 'computers' && win && win.style.display !== 'none') {
+        win.style.display = 'none';
+      } else {
+        showTab('computers');
+      }
+    });
+  }
+
+  // -- Menu Iniciar e Itens ----------------------------------------
   const startBtn  = document.getElementById('startBtn');
   const startMenu = document.getElementById('startMenu');
 
@@ -2711,6 +3219,7 @@ initUserSearch({
   document.getElementById('startItemCreate')?.addEventListener('click', () => { showTab('create'); closeStartMenu(); });
   document.getElementById('startItemDisable')?.addEventListener('click', () => { showTab('disable'); closeStartMenu(); });
   document.getElementById('startItemLocked')?.addEventListener('click', () => { showTab('locked'); closeStartMenu(); });
+  document.getElementById('startItemComputers')?.addEventListener('click', () => { showTab('computers'); closeStartMenu(); });
 
   // ── Modais (Ajuda / Sobre) ──────────────────────────────────────
   const docModal   = document.getElementById('docModal');
@@ -2861,7 +3370,7 @@ initUserSearch({
  * Gera script PowerShell para desabilitar uma conta no AD.
  * @param {Object} opts
  */
-function generateDisableScript({ sam, displayName, reason, moveOu, targetOu, expirePassword }) {
+function generateDisableScript({ sam, displayName, reason, moveOu, targetOu, expirePassword, removerM365 }) {
   const timestamp = new Date().toLocaleString('pt-BR');
   const reasonLine = reason ? `# Motivo  : ${reason}` : '';
 
@@ -2870,7 +3379,7 @@ function generateDisableScript({ sam, displayName, reason, moveOu, targetOu, exp
     `# Script de Desabilitação de Usuário no Active Directory`,
     `# Gerado em: ${timestamp}`,
     `# Usuário: ${displayName || sam}`,
-    ...(reasonLine ? [reasonLine] : []),
+    `...`,
     `# ================================================================`,
     ``,
     `Import-Module ActiveDirectory -ErrorAction Stop`,
@@ -2915,6 +3424,85 @@ function generateDisableScript({ sam, displayName, reason, moveOu, targetOu, exp
       `    $DataHoje = (Get-Date).ToString("dd/MM/yyyy")`,
       `    Set-ADUser -Identity $SamAccount -Description "DESABILITADO em $DataHoje - $Motivo" -ErrorAction SilentlyContinue`,
       `    Write-Host "   📝 Motivo registrado na descrição da conta." -ForegroundColor Cyan`,
+    );
+  }
+
+  if (removerM365) {
+    lines.push(
+      ``,
+      `    # ── Limpeza M365 (Licenças e Grupos) ────────────────────────────`,
+      `    $UPN = $null`,
+      `    try {`,
+      `        $ADUser = Get-ADUser -Identity $SamAccount -Properties UserPrincipalName, EmailAddress`,
+      `        $UPN = if ($ADUser.UserPrincipalName) { $ADUser.UserPrincipalName } else { $ADUser.EmailAddress }`,
+      `    } catch {}`,
+      ``,
+      `    if ($UPN) {`,
+      `        # Microsoft Graph (Licenças e Grupos da Nuvem)`,
+      `        if (Get-Command Get-MgUser -ErrorAction SilentlyContinue) {`,
+      `            try {`,
+      `                Write-Host "   ⚡ Conectando ao Microsoft Graph..." -ForegroundColor Yellow`,
+      `                Connect-MgGraph -Scopes "User.ReadWrite.All", "Organization.Read.All", "Group.ReadWrite.All", "Group.Read.All" -ErrorAction Stop | Out-Null`,
+      `                `,
+      `                $MgUser = Get-MgUser -UserId $UPN -Property "Id,AssignedLicenses" -ErrorAction Stop`,
+      `                $Licenses = @($MgUser.AssignedLicenses)`,
+      `                if ($Licenses.Count -gt 0) {`,
+      `                    $SkuIds = @($Licenses | ForEach-Object { $_.SkuId })`,
+      `                    Write-Host "   ⚡ Removendo $($SkuIds.Count) licença(s) no Graph..." -ForegroundColor Yellow`,
+      `                    Set-MgUserLicense -UserId $UPN -AddLicenses @() -RemoveLicenses $SkuIds -ErrorAction Stop | Out-Null`,
+      `                    Write-Host "      [OK] Licenças M365 removidas!" -ForegroundColor Green`,
+      `                }`,
+      `                `,
+      `                $MgGroups = Get-MgUserMemberOf -UserId $UPN -ErrorAction Stop`,
+      `                $GroupMemberships = @($MgGroups | Where-Object { $_.AdditionalProperties['@odata.type'] -eq '#microsoft.graph.group' -or $_.Id })`,
+      `                if ($GroupMemberships.Count -gt 0) {`,
+      `                    Write-Host "   ⚡ Filtrando grupos de e-mail da nuvem..." -ForegroundColor Yellow`,
+      `                    foreach ($G in $GroupMemberships) {`,
+      `                        $Grp = Get-MgGroup -GroupId $G.Id -Property "Id,DisplayName,MailEnabled,Mail,OnPremisesSyncEnabled" -ErrorAction SilentlyContinue`,
+      `                        if ($Grp) {`,
+      `                            $IsMail = ($Grp.MailEnabled -eq $true -or -not [string]::IsNullOrEmpty($Grp.Mail))`,
+      `                            $IsSynced = ($Grp.OnPremisesSyncEnabled -eq $true)`,
+      `                            if ($IsMail -and -not $IsSynced) {`,
+      `                                try {`,
+      `                                    Remove-MgGroupMemberByRef -GroupId $Grp.Id -DirectoryObjectId $MgUser.Id -ErrorAction Stop | Out-Null`,
+      `                                    Write-Host "      [OK] Removido do grupo de e-mail: $($Grp.DisplayName)" -ForegroundColor Green`,
+      `                                } catch {`,
+      `                                    Write-Host "      [!] Falha ao remover do grupo $($Grp.DisplayName): $_" -ForegroundColor Yellow`,
+      `                                }`,
+      `                            }`,
+      `                        }`,
+      `                    }`,
+      `                }`,
+      `            } catch {`,
+      `                Write-Warning "   [!] Erro nas operações do Microsoft Graph: $_"`,
+      `            }`,
+      `        }`,
+      `        `,
+      `        # Exchange Online (Grupos de Distribuição)`,
+      `        if (Get-Command Get-DistributionGroup -ErrorAction SilentlyContinue) {`,
+      `            try {`,
+      `                Write-Host "   ⚡ Conectando ao Exchange Online..." -ForegroundColor Yellow`,
+      `                Connect-ExchangeOnline -ErrorAction Stop | Out-Null`,
+      `                `,
+      `                $ExGroups = @(Get-DistributionGroup -Member $UPN -ResultSize Unlimited -ErrorAction SilentlyContinue)`,
+      `                if ($ExGroups.Count -gt 0) {`,
+      `                    Write-Host "   ⚡ Filtrando listas de distribuição da nuvem..." -ForegroundColor Yellow`,
+      `                    foreach ($EG in $ExGroups) {`,
+      `                        if ($EG.IsDirSynced -ne $true) {`,
+      `                            try {`,
+      `                                Remove-DistributionGroupMember -Identity $EG.Identity -Member $UPN -Confirm:$false -ErrorAction Stop | Out-Null`,
+      `                                Write-Host "      [OK] Removido da lista Exchange: $($EG.DisplayName)" -ForegroundColor Green`,
+      `                            } catch {`,
+      `                                Write-Host "      [!] Falha ao remover da lista Exchange $($EG.DisplayName): $_" -ForegroundColor Yellow`,
+      `                            }`,
+      `                        }`,
+      `                    }`,
+      `                }`,
+      `            } catch {`,
+      `                Write-Warning "   [!] Erro nas operações do Exchange Online: $_"`,
+      `            }`,
+      `        }`,
+      `    }`,
     );
   }
 
@@ -3138,8 +3726,9 @@ function generateDisableScript({ sam, displayName, reason, moveOu, targetOu, exp
     const moveOu         = document.getElementById('disableMoveOu').checked;
     const targetOu       = document.getElementById('disableOuSelect').value.trim();
     const expirePassword = document.getElementById('disableExpirePassword').checked;
+    const removerM365    = document.getElementById('disableRemoveLicensesM365').checked;
 
-    const script = generateDisableScript({ sam, displayName, reason, moveOu, targetOu, expirePassword });
+    const script = generateDisableScript({ sam, displayName, reason, moveOu, targetOu, expirePassword, removerM365 });
 
     const scriptCodeEl = document.getElementById('disableScriptCode');
     const scriptOutEl  = document.getElementById('disableScriptOutput');
@@ -3159,6 +3748,7 @@ function generateDisableScript({ sam, displayName, reason, moveOu, targetOu, exp
       { k: 'Nome Completo',   v: displayName },
       { k: 'Expirar Senha',   v: expirePassword ? 'Sim' : 'Não' },
       { k: 'Mover para OU',   v: (moveOu && targetOu) ? targetOu : 'Não' },
+      { k: 'Limpar M365 (Nuvem)', v: removerM365 ? 'Sim' : 'Não' },
       ...(reason ? [{ k: 'Motivo', v: reason }] : []),
     ].map(i => `
       <div class="summary-item">
@@ -3178,6 +3768,7 @@ function generateDisableScript({ sam, displayName, reason, moveOu, targetOu, exp
       moverOu      : moveOu,
       ouDestino    : targetOu,
       expirarSenha : expirePassword,
+      removerM365  : removerM365,
     };
 
     showToast('Script de desabilitação gerado! ✓');
@@ -3276,7 +3867,7 @@ function generateDisableScript({ sam, displayName, reason, moveOu, targetOu, exp
  * @param {string} targetOu      - OU de destino (se moveOu=true)
  * @param {boolean} expirePassword - expirar senha
  */
-function generateBulkDisableScript(users, reason, moveOu, targetOu, expirePassword) {
+function generateBulkDisableScript(users, reason, moveOu, targetOu, expirePassword, removerM365) {
   const timestamp = new Date().toLocaleString('pt-BR');
 
   const lines = [
@@ -3308,7 +3899,7 @@ function generateBulkDisableScript(users, reason, moveOu, targetOu, expirePasswo
     `    Write-Host ""`,
     `    Write-Host "▶ Processando: $Sam" -ForegroundColor Cyan`,
     `    try {`,
-    `        $User = Get-ADUser -Identity $Sam -ErrorAction Stop`,
+    `        $User = Get-ADUser -Identity $Sam -Properties UserPrincipalName, EmailAddress -ErrorAction Stop`,
     ``,
     `        # Desabilitar conta`,
     `        Disable-ADAccount -Identity $Sam -ErrorAction Stop`,
@@ -3341,6 +3932,63 @@ function generateBulkDisableScript(users, reason, moveOu, targetOu, expirePasswo
       `        $DataHoje = (Get-Date).ToString("dd/MM/yyyy")`,
       `        Set-ADUser -Identity $Sam -Description "DESABILITADO em $DataHoje - $Motivo" -ErrorAction SilentlyContinue`,
       `        Write-Host "  📝 Motivo registrado." -ForegroundColor Cyan`,
+    );
+  }
+
+  if (removerM365) {
+    lines.push(
+      ``,
+      `        # Limpeza M365 (Licenças e Grupos da Nuvem)`,
+      `        $UPN = if ($User.UserPrincipalName) { $User.UserPrincipalName } else { $User.EmailAddress }`,
+      `        if ($UPN) {`,
+      `            # Microsoft Graph`,
+      `            if (Get-Command Get-MgUser -ErrorAction SilentlyContinue) {`,
+      `                try {`,
+      `                    Connect-MgGraph -Scopes "User.ReadWrite.All", "Organization.Read.All", "Group.ReadWrite.All", "Group.Read.All" -ErrorAction Stop | Out-Null`,
+      `                    $MgUser = Get-MgUser -UserId $UPN -Property "Id,AssignedLicenses" -ErrorAction Stop`,
+      `                    $Licenses = @($MgUser.AssignedLicenses)`,
+      `                    if ($Licenses.Count -gt 0) {`,
+      `                        $SkuIds = @($Licenses | ForEach-Object { $_.SkuId })`,
+      `                        Set-MgUserLicense -UserId $UPN -AddLicenses @() -RemoveLicenses $SkuIds -ErrorAction Stop | Out-Null`,
+      `                        Write-Host "  ⚡ M365: Licenças removidas." -ForegroundColor Green`,
+      `                    }`,
+      `                    $MgGroups = Get-MgUserMemberOf -UserId $UPN -ErrorAction Stop`,
+      `                    $GroupMemberships = @($MgGroups | Where-Object { $_.AdditionalProperties['@odata.type'] -eq '#microsoft.graph.group' -or $_.Id })`,
+      `                    if ($GroupMemberships.Count -gt 0) {`,
+      `                        foreach ($G in $GroupMemberships) {`,
+      `                            $Grp = Get-MgGroup -GroupId $G.Id -Property "Id,DisplayName,MailEnabled,Mail,OnPremisesSyncEnabled" -ErrorAction SilentlyContinue`,
+      `                            if ($Grp) {`,
+      `                                $IsMail = ($Grp.MailEnabled -eq $true -or -not [string]::IsNullOrEmpty($Grp.Mail))`,
+      `                                $IsSynced = ($Grp.OnPremisesSyncEnabled -eq $true)`,
+      `                                if ($IsMail -and -not $IsSynced) {`,
+      `                                    Remove-MgGroupMemberByRef -GroupId $Grp.Id -DirectoryObjectId $MgUser.Id -ErrorAction SilentlyContinue | Out-Null`,
+      `                                }`,
+      `                            }`,
+      `                        }`,
+      `                        Write-Host "  ⚡ M365: Removido dos grupos de e-mail da nuvem." -ForegroundColor Green`,
+      `                    }`,
+      `                } catch {`,
+      `                    Write-Host "  [!] Erro no Graph para $UPN: $_" -ForegroundColor Yellow`,
+      `                }`,
+      `            }`,
+      `            # Exchange Online`,
+      `            if (Get-Command Get-DistributionGroup -ErrorAction SilentlyContinue) {`,
+      `                try {`,
+      `                    Connect-ExchangeOnline -ErrorAction Stop | Out-Null`,
+      `                    $ExGroups = @(Get-DistributionGroup -Member $UPN -ResultSize Unlimited -ErrorAction SilentlyContinue)`,
+      `                    if ($ExGroups.Count -gt 0) {`,
+      `                        foreach ($EG in $ExGroups) {`,
+      `                            if ($EG.IsDirSynced -ne $true) {`,
+      `                                Remove-DistributionGroupMember -Identity $EG.Identity -Member $UPN -Confirm:$false -ErrorAction SilentlyContinue | Out-Null`,
+      `                            }`,
+      `                        }`,
+      `                        Write-Host "  ⚡ Exchange: Removido das listas de distribuição da nuvem." -ForegroundColor Green`,
+      `                    }`,
+      `                } catch {`,
+      `                    Write-Host "  [!] Erro no Exchange para $UPN: $_" -ForegroundColor Yellow`,
+      `                }`,
+      `            }`,
+      `        }`,
     );
   }
 
@@ -3613,8 +4261,9 @@ function generateBulkDisableScript(users, reason, moveOu, targetOu, expirePasswo
     const moveOu       = document.getElementById('disableBulkMoveOu').checked;
     const targetOu     = document.getElementById('disableBulkOuSelect').value.trim();
     const expirePw     = document.getElementById('disableBulkExpire').checked;
+    const removerM365  = document.getElementById('disableBulkRemoveLicensesM365').checked;
 
-    const script = generateBulkDisableScript(users, reason, moveOu, targetOu, expirePw);
+    const script = generateBulkDisableScript(users, reason, moveOu, targetOu, expirePw, removerM365);
 
     const codeEl     = document.getElementById('disableBulkScriptCode');
     const outputEl   = document.getElementById('disableBulkScriptOutput');
@@ -3633,6 +4282,7 @@ function generateBulkDisableScript(users, reason, moveOu, targetOu, expirePasswo
       { k: 'Total de contas',  v: `${users.length} usuários` },
       { k: 'Expirar Senha',    v: expirePw ? 'Sim' : 'Não' },
       { k: 'Mover para OU',    v: (moveOu && targetOu) ? targetOu : 'Não' },
+      { k: 'Limpar M365 (Nuvem)', v: removerM365 ? 'Sim' : 'Não' },
       ...(reason ? [{ k: 'Motivo Global', v: reason }] : []),
       { k: 'Usuários', v: users.map(u => u.sam).join(', ') },
     ].map(i => `
@@ -3651,6 +4301,7 @@ function generateBulkDisableScript(users, reason, moveOu, targetOu, expirePasswo
       moverOu      : moveOu,
       ouDestino    : targetOu,
       expirarSenha : expirePw,
+      removerM365  : removerM365,
     };
 
     showToast(`Script gerado para ${users.length} usuário(s)! ✓`);
@@ -3940,7 +4591,7 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
    Botão Desbloquear chama POST /api/desbloquear (JSON)
 ═══════════════════════════════════════════════════════════════ */
 (function LockedUsersMonitor() {
-  const SERVER_BASE   = window._SERVER_BASE || 'http://localhost:7510';
+  const SERVER_BASE   = window._SERVER_BASE || ((window.location.protocol === 'http:' || window.location.protocol === 'https:') ? `${window.location.protocol}//${window.location.host}` : 'http://localhost:7510');
   const POLL_INTERVAL = 60;
 
   const offlineBanner = document.getElementById('lockedOfflineBanner');
@@ -4229,16 +4880,902 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
 
   window._lockedMonitorCheckNow = checkLockedUsers;
 
-  // Usa o token global do servidor (gerenciado pelo módulo principal)
   function checkOnlineState() {
-    var online = !!window._serverToken;
-    if (online) {
+    const online = !!window._serverToken;
+    if (!online) {
+      if (offlineBanner) offlineBanner.style.display = 'flex';
+      if (countdownWrap) countdownWrap.style.display = 'none';
+      if (checkNowBtn)   checkNowBtn.disabled = true;
+      if (statusBar)     statusBar.style.display = 'none';
+    } else {
       if (offlineBanner) offlineBanner.style.display = 'none';
       if (checkNowBtn)   checkNowBtn.disabled = false;
-    } else {
-      if (offlineBanner) offlineBanner.style.display = 'flex';
+      if (countdownWrap) countdownWrap.style.display = 'flex';
     }
   }
+
+  // Usa o token global do servidor (gerenciado pelo módulo principal)
   checkOnlineState();
   setInterval(checkOnlineState, 3000);
 })();
+
+/* ═══════════════════════════════════════════════════════════════
+   LEITOR DE DIAGNÓSTICO — JSON READER
+   Gerencia a aba Computadores como leitor local de arquivos JSON
+   de diagnóstico de hardware. Sem dependência de servidor.
+═══════════════════════════════════════════════════════════════ */
+(function ComputersJsonReader() {
+  const uploadZone    = document.getElementById('compUploadZone');
+  const fileInput     = document.getElementById('compFileInput');
+  const fileList      = document.getElementById('compFileList');
+  const fileListEmpty = document.getElementById('compFileListEmpty');
+  const detailsEmpty  = document.getElementById('compDetailsEmpty');
+  const detailsContent = document.getElementById('compDetailsContent');
+  const headerName    = document.getElementById('compHeaderName');
+  const headerDate    = document.getElementById('compHeaderDate');
+  const clearAllBtn   = document.getElementById('compClearAllBtn');
+
+  if (!fileList) return;
+
+  let loadedFiles = [];  // Array of { filename, data (parsed JSON) }
+  let selectedIndex = -1;
+
+  /* -- Renderizar lista de arquivos -- */
+  function renderFileList() {
+    fileList.innerHTML = '';
+    
+    if (loadedFiles.length === 0) {
+      fileListEmpty.style.display = 'flex';
+      if (clearAllBtn) clearAllBtn.style.display = 'none';
+      return;
+    }
+
+    fileListEmpty.style.display = 'none';
+    if (clearAllBtn) clearAllBtn.style.display = '';
+
+    loadedFiles.forEach((item, idx) => {
+      const comp = item.data.Computador || {};
+      const so = item.data.SO || {};
+      const pcName = comp.Nome || item.filename.replace('.json', '');
+      const osName = so.Nome || '';
+      const analysisDate = item.data.AnaliseData || '';
+
+      const row = document.createElement('div');
+      row.className = 'comp-file-row' + (idx === selectedIndex ? ' selected' : '');
+      row.innerHTML = `
+        <div class="comp-file-row-info">
+          <div class="comp-file-row-name">${escapeHTML(pcName)}</div>
+          <div class="comp-file-row-meta">${escapeHTML(osName)}${analysisDate ? ' · ' + escapeHTML(analysisDate) : ''}</div>
+        </div>
+        <button class="comp-file-row-remove" title="Remover" data-idx="${idx}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      `;
+
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.comp-file-row-remove')) return;
+        selectFile(idx);
+      });
+
+      const removeBtn = row.querySelector('.comp-file-row-remove');
+      if (removeBtn) {
+        removeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          removeFile(idx);
+        });
+      }
+
+      fileList.appendChild(row);
+    });
+  }
+
+  /* -- Selecionar arquivo -- */
+  function selectFile(idx) {
+    if (idx < 0 || idx >= loadedFiles.length) return;
+    selectedIndex = idx;
+    renderFileList();
+    renderDetails(loadedFiles[idx]);
+  }
+
+  /* -- Remover arquivo -- */
+  function removeFile(idx) {
+    loadedFiles.splice(idx, 1);
+    if (selectedIndex === idx) {
+      selectedIndex = -1;
+      clearDetails();
+    } else if (selectedIndex > idx) {
+      selectedIndex--;
+    }
+    renderFileList();
+  }
+
+  /* -- Limpar detalhes -- */
+  function clearDetails() {
+    detailsEmpty.style.display = 'flex';
+    detailsContent.style.display = 'none';
+    headerName.textContent = 'Nenhum arquivo selecionado';
+    if (headerDate) headerDate.style.display = 'none';
+  }
+
+  /* -- Renderizar detalhes de um arquivo -- */
+  function renderDetails(item) {
+    const data = item.data;
+    const comp = data.Computador || {};
+    const so = data.SO || {};
+    const cpu = data.CPU || {};
+    const ram = data.RAM || {};
+    const seg = data.Seguranca || {};
+    const bat = data.Bateria || {};
+
+    // Header
+    headerName.textContent = comp.Nome || item.filename;
+    if (headerDate && data.AnaliseData) {
+      headerDate.textContent = 'Análise: ' + data.AnaliseData;
+      headerDate.style.display = '';
+    } else if (headerDate) {
+      headerDate.style.display = 'none';
+    }
+
+    // Rebuild content
+    detailsEmpty.style.display = 'none';
+    detailsContent.style.display = 'flex';
+
+    detailsContent.innerHTML = `
+      <!-- Info da Análise -->
+      <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:#f0f4f0; border:1px solid var(--win-gray); font-size:10px; color:#4b5563;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14" style="flex-shrink:0;">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span><strong>Data da Análise:</strong> ${escapeHTML(data.AnaliseData || 'Não informado')}</span>
+        <span style="margin-left:auto;"><strong>Arquivo:</strong> ${escapeHTML(item.filename)}</span>
+      </div>
+
+      <!-- Grid 2x2: Sistema & CPU -->
+      <div class="summary-grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; padding: 0; border: none; background: transparent;">
+        
+        <!-- Sistema & BIOS -->
+        <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+          <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">Sistema & BIOS</h4>
+          <div style="display: flex; flex-direction: column; gap: 3px; font-size: 11px;">
+            <div><strong>Nome:</strong> ${escapeHTML(comp.Nome || '-')}</div>
+            <div><strong>Fabricante:</strong> ${escapeHTML(comp.Fabricante || '-')}</div>
+            <div><strong>Modelo:</strong> ${escapeHTML(comp.Modelo || '-')}</div>
+            <div><strong>BIOS:</strong> ${escapeHTML(comp.BIOS || '-')}</div>
+            <div><strong>Firmware:</strong> <span class="badge ${comp.Firmware === 'UEFI' ? 'badge-uefi' : 'badge-legacy'}" style="font-size: 9px; padding: 0px 4px;">${escapeHTML(comp.Firmware || '-')}</span></div>
+            <div><strong>Uptime:</strong> ${escapeHTML(comp.Uptime || '-')}</div>
+          </div>
+        </div>
+
+        <!-- Processador (CPU) -->
+        <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+          <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">Processador (CPU)</h4>
+          <div style="display: flex; flex-direction: column; gap: 3px; font-size: 11px;">
+            <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: bold;" title="${escapeHTML(cpu.Nome || '')}">${escapeHTML(cpu.Nome || '-')}</div>
+            <div><strong>Núcleos:</strong> ${cpu.NucleosFisicos || '-'} Físicos / ${cpu.NucleosLogicos || '-'} Lógicos</div>
+            <div><strong>Velocidade:</strong> ${cpu.VelocidadeBase || '-'} GHz</div>
+            <div><strong>Arquitetura:</strong> ${escapeHTML(cpu.Arquitetura || '-')}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Grid 2x2: RAM & SO -->
+      <div class="summary-grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; padding: 0; border: none; background: transparent;">
+        
+        <!-- Memória RAM -->
+        <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+          <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">Memória RAM</h4>
+          <div style="display: flex; flex-direction: column; gap: 3px; font-size: 11px;">
+            <div><strong>Total:</strong> ${ram.Total || '-'} GB</div>
+            <div><strong>Usado:</strong> ${ram.Usado || '-'} GB (${ram.PercentualUso || '0'}%)</div>
+            <div style="display: flex; align-items: center; gap: 4px; margin: 2px 0;">
+              <div class="comp-progress-container" style="flex: 1; height: 10px; background: #ddd; position: relative;">
+                <div style="height: 100%; background: ${(ram.PercentualUso || 0) > 85 ? 'var(--accent-red)' : 'var(--sage-titlebar)'}; width: ${ram.PercentualUso || 0}%;"></div>
+              </div>
+            </div>
+            <div><strong>Livre:</strong> ${ram.Livre || '-'} GB</div>
+            <div><strong>Slots Ocupados:</strong> ${ram.SlotsOcupados || '-'}</div>
+            <div><strong>Velocidade:</strong> ${ram.Velocidade || '-'} MHz</div>
+          </div>
+        </div>
+
+        <!-- Sistema Operacional & Segurança -->
+        <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+          <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">S.O. & Segurança</h4>
+          <div style="display: flex; flex-direction: column; gap: 3px; font-size: 11px;">
+            <div><strong>S.O.:</strong> ${escapeHTML(so.Nome || '-')}</div>
+            <div><strong>Versão:</strong> ${escapeHTML(so.Versao || '-')}</div>
+            <div><strong>Arquitetura:</strong> ${escapeHTML(so.Arquitetura || '-')}</div>
+            <div style="border-top: 1px dashed var(--win-gray); margin-top: 4px; padding-top: 4px;">
+              <strong>TPM:</strong> ${escapeHTML(seg.TPM || 'Não Encontrado')}
+              <span class="badge ${seg.TPMAtivo ? 'badge-sim' : 'badge-nao'}" style="font-size: 9px; padding: 0 4px; margin-left: 4px;">${seg.TPMAtivo ? 'Ativo' : 'Inativo'}</span>
+            </div>
+            <div><strong>Secure Boot:</strong> <span class="badge ${seg.SecureBoot ? 'badge-sim' : 'badge-nao'}" style="font-size: 9px; padding: 0 4px;">${seg.SecureBoot ? 'Sim' : 'Não'}</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- GPU -->
+      <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+        <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">Placa de Vídeo (GPU)</h4>
+        <div id="containerCompGpus" style="display:flex; flex-direction:column; gap:6px; font-size:11px;"></div>
+      </div>
+
+      <!-- Discos -->
+      <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+        <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">Armazenamento (Partições Locais)</h4>
+        <div id="containerCompDiscos" style="display:flex; flex-direction:column; gap:8px; font-size:11px;"></div>
+      </div>
+
+      <!-- Rede -->
+      <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+        <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">Rede (Interfaces Ativas)</h4>
+        <div id="containerCompRede" style="display:flex; flex-direction:column; gap:6px; font-size:11px;"></div>
+      </div>
+
+      <!-- Bateria (condicional) -->
+      ${bat.TemBateria ? `
+      <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+        <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">Bateria</h4>
+        <div style="display: flex; flex-direction: column; gap: 3px; font-size: 11px;">
+          <div><strong>Carga:</strong> ${bat.Carga || '0'}%</div>
+          <div><strong>Status:</strong> ${escapeHTML(bat.Status || '-')}</div>
+          <div><strong>Saúde:</strong> ${bat.Saude || '100'}%</div>
+        </div>
+      </div>` : ''}
+    `;
+
+    // Preencher GPUs
+    const gpuContainer = document.getElementById('containerCompGpus');
+    if (gpuContainer) {
+      if (data.GPU && Array.isArray(data.GPU) && data.GPU.length > 0) {
+        data.GPU.forEach(g => {
+          const div = document.createElement('div');
+          div.style.cssText = 'padding: 4px 0; border-bottom: 1px dashed #eee;';
+          div.innerHTML = `<strong>${escapeHTML(g.Nome || 'Placa de Vídeo')}</strong> — VRAM: ${g.VRAM || 0} GB · Driver: ${escapeHTML(g.Driver || '-')} · Resolução: ${escapeHTML(g.Resolucao || '-')}`;
+          gpuContainer.appendChild(div);
+        });
+      } else if (data.GPU && typeof data.GPU === 'object' && !Array.isArray(data.GPU)) {
+        const g = data.GPU;
+        const div = document.createElement('div');
+        div.style.cssText = 'padding: 4px 0;';
+        div.innerHTML = `<strong>${escapeHTML(g.Nome || 'Placa de Vídeo')}</strong> — VRAM: ${g.VRAM || 0} GB · Driver: ${escapeHTML(g.Driver || '-')} · Resolução: ${escapeHTML(g.Resolucao || '-')}`;
+        gpuContainer.appendChild(div);
+      } else {
+        gpuContainer.innerHTML = '<div style="opacity:.5">Nenhuma placa de vídeo detectada</div>';
+      }
+    }
+
+    // Preencher Discos
+    const diskContainer = document.getElementById('containerCompDiscos');
+    if (diskContainer) {
+      const disks = Array.isArray(data.Discos) ? data.Discos : (data.Discos ? [data.Discos] : []);
+      if (disks.length > 0) {
+        disks.forEach(d => {
+          const div = document.createElement('div');
+          div.className = 'disk-part-item';
+          const label = d.Volume ? ` (${d.Volume})` : '';
+          div.innerHTML = `
+            <div class="disk-part-header">
+              <strong>Disco ${escapeHTML(d.Letra || '?:')}${escapeHTML(label)} [${escapeHTML(d.Tipo || 'SSD')}]</strong>
+              <span>${d.Usado || 0} GB usados de ${d.Tamanho || 0} GB (${d.UsadoPercent || 0}%)</span>
+            </div>
+            <div class="comp-progress-container" style="height: 10px; background: #ddd; position: relative;">
+              <div style="height: 100%; background: ${d.SaudeStatus === 'Saudavel' ? 'var(--sage-titlebar)' : 'var(--accent-red)'}; width: ${d.UsadoPercent || 0}%;"></div>
+            </div>
+            <div style="font-size: 9px; color: #666; margin-top: 2px; display:flex; justify-content:space-between;">
+              <span>Espaço Livre: ${d.Livre || 0} GB</span>
+              <span>Saúde: <span class="badge ${d.SaudeStatus === 'Saudavel' ? 'badge-sim' : 'badge-nao'}" style="font-size: 8px; padding:0 3px;">${escapeHTML(d.SaudeStatus || 'Desconhecido')}</span></span>
+            </div>
+          `;
+          diskContainer.appendChild(div);
+        });
+      } else {
+        diskContainer.innerHTML = '<div style="opacity:.5">Nenhum disco detectado</div>';
+      }
+    }
+
+    // Preencher Rede
+    const netContainer = document.getElementById('containerCompRede');
+    if (netContainer) {
+      const networks = Array.isArray(data.Rede) ? data.Rede : (data.Rede ? [data.Rede] : []);
+      if (networks.length > 0) {
+        networks.forEach(n => {
+          const div = document.createElement('div');
+          div.style.cssText = 'padding: 4px 0; border-bottom: 1px dashed #eee;';
+          div.innerHTML = `<strong>${escapeHTML(n.Nome || 'Interface')}</strong> — IP: ${escapeHTML(n.IP || '-')} · MAC: ${escapeHTML(n.MAC || '-')} · Velocidade: ${escapeHTML(n.Velocidade || '-')}`;
+          netContainer.appendChild(div);
+        });
+      } else {
+        netContainer.innerHTML = '<div style="opacity:.5">Nenhuma interface de rede ativa</div>';
+      }
+    }
+  }
+
+  /* -- Processar arquivos JSON importados -- */
+  function handleFiles(files) {
+    if (!files || !files.length) return;
+
+    let count = 0;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file.name.toLowerCase().endsWith('.json')) {
+        showToast('Apenas arquivos JSON são aceitos: ' + file.name, '#dc2626');
+        continue;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        try {
+          const json = JSON.parse(evt.target.result);
+
+          // Normalizar chaves (suportar variações de casing)
+          const compInfo = json.Computador || json.computador;
+          const soInfo = json.SO || json.so || json.So;
+
+          if (!compInfo && !soInfo) {
+            showToast('Estrutura JSON inválida: ' + file.name, '#dc2626');
+            return;
+          }
+
+          // Normalizar os campos principais
+          if (!json.Computador && compInfo) json.Computador = compInfo;
+          if (!json.SO && soInfo) json.SO = soInfo;
+          if (!json.CPU && (json.cpu || json.Cpu)) json.CPU = json.cpu || json.Cpu;
+          if (!json.RAM && (json.ram || json.Ram)) json.RAM = json.ram || json.Ram;
+          if (!json.GPU && (json.gpu || json.Gpu)) json.GPU = json.gpu || json.Gpu;
+          if (!json.Discos && (json.discos)) json.Discos = json.discos;
+          if (!json.Seguranca && (json.seguranca)) json.Seguranca = json.seguranca;
+          if (!json.Rede && (json.rede)) json.Rede = json.rede;
+          if (!json.Bateria && (json.bateria)) json.Bateria = json.bateria;
+
+          loadedFiles.push({
+            filename: file.name,
+            data: json
+          });
+
+          count++;
+          renderFileList();
+
+          // Auto-selecionar o primeiro arquivo se nenhum está selecionado
+          if (selectedIndex === -1) {
+            selectFile(0);
+          }
+        } catch (err) {
+          console.error('Erro ao ler JSON:', err);
+          showToast('Erro ao ler JSON: ' + file.name, '#dc2626');
+        }
+      };
+
+      reader.onerror = function() {
+        showToast('Erro de leitura: ' + file.name, '#dc2626');
+      };
+
+      reader.readAsText(file);
+    }
+  }
+
+  /* -- Event Listeners -- */
+
+  // Upload zone drag & drop
+  if (uploadZone) {
+    uploadZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadZone.classList.add('dragover');
+    });
+
+    uploadZone.addEventListener('dragleave', () => {
+      uploadZone.classList.remove('dragover');
+    });
+
+    uploadZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      handleFiles(e.dataTransfer.files);
+    });
+
+    uploadZone.addEventListener('click', () => {
+      fileInput.click();
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+    fileInput.addEventListener('change', (e) => {
+      handleFiles(e.target.files);
+      fileInput.value = '';
+    });
+  }
+
+  // Clear all button
+  if (clearAllBtn) {
+    clearAllBtn.addEventListener('click', () => {
+      loadedFiles = [];
+      selectedIndex = -1;
+      clearDetails();
+      renderFileList();
+      showToast('Todos os arquivos foram removidos.');
+    });
+  }
+
+  // Initial render
+  renderFileList();
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   M365 MANUAL ACTIVATION PANEL
+   Controla a aba separada para inclusão de licenças e grupos M365
+   diretamente na nuvem (Exchange Online e Microsoft Graph)
+   sem aguardar a sincronização do AD local.
+═══════════════════════════════════════════════════════════════ */
+(function () {
+  const SERVER_BASE = window._SERVER_BASE || `http://localhost:7510`;
+
+  const searchEl       = document.getElementById('m365ActUserSearch');
+  const clearEl        = document.getElementById('clearM365ActUser');
+  const dropEl         = document.getElementById('m365ActUserDropdown');
+  const chipEl         = document.getElementById('m365ActUserChip');
+  const avatarEl       = document.getElementById('m365ActChipAvatar');
+  const nameEl         = document.getElementById('m365ActChipName');
+  const metaEl         = document.getElementById('m365ActChipMeta');
+  const removeEl       = document.getElementById('removeM365ActUser');
+
+  const emailEl         = document.getElementById('m365ActEmail');
+  const licenseSelect   = document.getElementById('m365ActLicense');
+  const groupsSearch    = document.getElementById('m365ActGroupsSearch');
+  const groupsContainer = document.getElementById('m365ActGroupsContainer');
+  const btnApply        = document.getElementById('btnM365ActApply');
+
+  const termOut         = document.getElementById('m365ActTerminalOutput');
+  const termStatus      = document.getElementById('m365ActTerminalStatus');
+  const termClearBtn    = document.getElementById('m365ActTerminalClearBtn');
+
+  if (!searchEl) return;
+
+  let debounceTimer = null;
+  let selectedUser  = null;
+  let m365Connected = false;
+  let loadedM365Groups = [];
+  const selectedM365GroupsMap = new Map();
+
+  // Dicionário de tradução dos SKU Part Numbers para nomes oficiais da Microsoft
+  const SKU_MAP = {
+    'O365_BUSINESS_ESSENTIALS': 'Microsoft 365 Business Basic',
+    'O365_BUSINESS_PREMIUM': 'Microsoft 365 Business Premium',
+    'O365_BUSINESS': 'Microsoft 365 Business Standard',
+    'SMB_BUSINESS': 'Microsoft 365 Business Standard',
+    'EXCHANGESTANDARD': 'Exchange Online (Plan 1)',
+    'EXCHANGEENTERPRISE': 'Exchange Online (Plan 2)',
+    'SPE_E3': 'Microsoft 365 E3',
+    'SPE_E5': 'Microsoft 365 E5',
+    'ENTERPRISEPACK': 'Office 365 E3',
+    'ENTERPRISEPREMIUM': 'Office 365 E5',
+    'DEVELOPER_PACK': 'Microsoft 365 E5 Developer',
+    'POWER_BI_PRO': 'Power BI Pro',
+    'POWER_BI_STANDARD': 'Power BI Free',
+    'TEAMS_ENTERPRISE': 'Microsoft Teams Enterprise',
+    'MCOPCOM': 'Microsoft 365 Copilot',
+    'ONEDRIVESTANDARD': 'OneDrive for Business (Plan 1)',
+    'ONEDRIVEENTERPRISE': 'OneDrive for Business (Plan 2)',
+    'PROJECT_PROFESSIONAL': 'Project Plan 3',
+    'VISIOPRO': 'Visio Plan 1',
+    'DYN365_CUSTOMER_VOICE_TRIAL': 'Dynamics 365 Customer Voice Trial',
+    'COPILOT_STUDIO_VIRAL_TRIAL': 'Microsoft Copilot Studio Viral Trial',
+    'FABRIC_FREE': 'Microsoft Fabric (Free)',
+    'POWERAPPS_DEVELOPER': 'Microsoft Power Apps for Developer',
+    'POWERAUTOMATE_FREE': 'Microsoft Power Automate Free',
+    'STREAM_TRIAL': 'Microsoft Stream Trial',
+    'PLANNER_PROJECT_PLAN3': 'Planner and Project Plan 3',
+    'VISIO_PLAN1': 'Visio Plan 1'
+  };
+
+  function getFriendlySkuName(skuPartNumber) {
+    if (SKU_MAP[skuPartNumber]) {
+      return SKU_MAP[skuPartNumber];
+    }
+    return skuPartNumber
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  }
+
+  function getUsers() {
+    return (window.AD_DATA && window.AD_DATA.users) ? window.AD_DATA.users : [];
+  }
+
+  function getInitials(name) {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  function hlText(text, term) {
+    if (!term || !text) return text;
+    const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const tNorm = normalize(term);
+    const txtNorm = normalize(text);
+    const idx = txtNorm.indexOf(tNorm);
+    if (idx === -1) return text;
+    return text.substring(0, idx) + '<mark>' + text.substring(idx, idx + term.length) + '</mark>' + text.substring(idx + term.length);
+  }
+
+  function filterUsers(term) {
+    const normalize = s => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
+    const t = normalize(term);
+    return getUsers().filter(u =>
+      normalize(u.samAccountName).includes(t) ||
+      normalize(u.displayName).includes(t)    ||
+      normalize(u.name).includes(t)           ||
+      normalize(u.department).includes(t)
+    ).slice(0, 12);
+  }
+
+  function renderDrop(results, term) {
+    dropEl.innerHTML = '';
+    if (!results.length) {
+      dropEl.innerHTML = `
+        <div class="user-dropdown-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          Nenhum usuário encontrado
+        </div>`;
+      dropEl.style.display = 'block';
+      return;
+    }
+    results.forEach(u => {
+      const item = document.createElement('div');
+      item.className = 'user-dropdown-item';
+      const initials = getInitials(u.displayName || u.samAccountName);
+      const isDisabled = u.enabled === false;
+      item.innerHTML = `
+        <div class="user-dropdown-avatar" style="${isDisabled ? 'background:linear-gradient(135deg,#6b7280,#9ca3af)' : ''}">${initials}</div>
+        <div class="user-dropdown-info">
+          <div class="user-dropdown-name">${hlText(u.displayName || u.samAccountName, term)}
+            ${isDisabled ? '<span style="font-size:10px;background:#ef444420;color:#ef4444;border:1px solid #ef444430;border-radius:99px;padding:1px 7px;margin-left:6px;">Desabilitado</span>' : ''}
+          </div>
+          <div class="user-dropdown-meta">
+            <span class="user-dropdown-sam">${hlText(u.samAccountName, term)}</span>
+            ${u.department ? `<span class="user-dropdown-dept">${u.department}</span>` : ''}
+            ${u.title ? `<span class="user-dropdown-dept">${u.title}</span>` : ''}
+          </div>
+        </div>`;
+      item.addEventListener('mousedown', e => { e.preventDefault(); selectUser(u); });
+      dropEl.appendChild(item);
+    });
+    dropEl.style.display = 'block';
+  }
+
+  function selectUser(u) {
+    selectedUser = u;
+    const initials = getInitials(u.displayName || u.samAccountName);
+    avatarEl.textContent = initials;
+    nameEl.textContent   = u.displayName || u.samAccountName;
+    metaEl.textContent   = u.samAccountName
+      + (u.department ? ` · ${u.department}` : '')
+      + (u.title ? ` · ${u.title}` : '');
+
+    chipEl.style.display   = 'flex';
+    searchEl.value         = '';
+    clearEl.style.display  = 'none';
+    dropEl.style.display   = 'none';
+
+    // Preenche o email/UPN
+    if (u.userPrincipalName) {
+      emailEl.value = u.userPrincipalName;
+    } else if (u.emailAddress) {
+      emailEl.value = u.emailAddress;
+    } else {
+      emailEl.value = `${u.samAccountName.toLowerCase()}@orsegups.com.br`;
+    }
+  }
+
+  function clearSelection() {
+    selectedUser         = null;
+    chipEl.style.display = 'none';
+    searchEl.value       = '';
+    clearEl.style.display = 'none';
+    emailEl.value        = '';
+  }
+
+  // Eventos de Autocomplete de Usuário
+  searchEl.addEventListener('input', function () {
+    const term = this.value.trim();
+    clearEl.style.display = term ? 'flex' : 'none';
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      if (term.length >= 2) {
+        const results = filterUsers(term);
+        renderDrop(results, term);
+      } else {
+        dropEl.style.display = 'none';
+      }
+    }, 200);
+  });
+
+  searchEl.addEventListener('focus', function () {
+    const term = this.value.trim();
+    if (term.length >= 2) {
+      const results = filterUsers(term);
+      renderDrop(results, term);
+    }
+  });
+
+  searchEl.addEventListener('blur', function () {
+    setTimeout(() => { dropEl.style.display = 'none'; }, 200);
+  });
+
+  clearEl.addEventListener('click', function () {
+    searchEl.value = '';
+    clearEl.style.display = 'none';
+    dropEl.style.display = 'none';
+    searchEl.focus();
+  });
+
+  removeEl.addEventListener('click', clearSelection);
+
+  // Helper para adicionar linhas ao terminal
+  function addTermLine(text, typeHint) {
+    if (!termOut) return;
+    const line = document.createElement('div');
+    line.className = 'tline';
+    const lower = (text || '').toLowerCase();
+    if (typeHint === 'error' || text.includes('❌') || lower.includes('falha') || lower.includes('erro') || lower.includes('error')) {
+      line.classList.add('tl-error');
+    } else if (text.includes('✅') || text.includes('[OK]') || lower.includes('sucesso') || lower.includes('criado') || lower.includes('desbloqueada') || lower.includes('desabilitada')) {
+      line.classList.add('tl-success');
+    } else if (text.includes('⚠') || lower.includes('warning') || lower.includes('aviso')) {
+      line.classList.add('tl-warn');
+    } else if (text.includes('🔗') || text.includes('⚡') || text.includes('🔑') || text.includes('📂') || text.includes('📝') || typeHint === 'info') {
+      line.classList.add('tl-info');
+    }
+    line.textContent = text || '\u00a0';
+    termOut.appendChild(line);
+    termOut.scrollTop = termOut.scrollHeight;
+  }
+
+  // Renderização de Grupos do M365 com pesquisa reativa
+  function renderGroups(filterText = '') {
+    if (!groupsContainer) return;
+    groupsContainer.innerHTML = '';
+
+    const query = filterText.toLowerCase().trim();
+    const filtered = loadedM365Groups.filter(g => {
+      const nameMatch = g.name ? g.name.toLowerCase().includes(query) : false;
+      const mailMatch = g.mail ? g.mail.toLowerCase().includes(query) : false;
+      return nameMatch || mailMatch;
+    });
+
+    if (filtered.length === 0) {
+      groupsContainer.innerHTML = '<span style="opacity: 0.5; padding: 4px;">Nenhum grupo correspondente encontrado.</span>';
+      return;
+    }
+
+    filtered.forEach(g => {
+      const isChecked = selectedM365GroupsMap.has(g.id);
+      const div = document.createElement('div');
+      div.style.display = 'flex';
+      div.style.alignItems = 'flex-start';
+      div.style.gap = '6px';
+      div.style.padding = '3px 4px';
+      div.style.borderBottom = '1px solid #f3f4f6';
+      div.innerHTML = `
+        <input type="checkbox" class="m365-group-cb" value="${escapeHTML(g.id)}" ${isChecked ? 'checked' : ''} id="m365act_cb_${escapeHTML(g.id)}" style="margin-top: 1px;">
+        <label for="m365act_cb_${escapeHTML(g.id)}" style="cursor:pointer; font-size:10px; line-height: 1.2; word-break: break-word;" title="${escapeHTML(g.name)} (${escapeHTML(g.mail)})">${escapeHTML(g.name)}<span style="opacity:0.6; font-size:8px; margin-left: 6px; font-weight: normal; white-space: nowrap;">[${escapeHTML(g.type)}]</span></label>
+      `;
+      
+      const cb = div.querySelector('input');
+      cb.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          selectedM365GroupsMap.set(g.id, g);
+        } else {
+          selectedM365GroupsMap.delete(g.id);
+        }
+      });
+
+      groupsContainer.appendChild(div);
+    });
+  }
+
+  if (groupsSearch) {
+    groupsSearch.addEventListener('input', (e) => {
+      renderGroups(e.target.value);
+    });
+  }
+
+  // UI Offline
+  function setOfflineUI() {
+    m365Connected = false;
+    btnApply.disabled = true;
+    termStatus.textContent = 'Offline';
+    licenseSelect.innerHTML = '<option value="">-- Nenhuma licença selecionada --</option>';
+    groupsContainer.innerHTML = '<span style="opacity: 0.5; padding: 4px; color: #dc2626;">M365 Offline. Conecte ao M365 no painel lateral antes de prosseguir.</span>';
+  }
+
+  async function refreshToken() {
+    try {
+      const res = await fetch(`${SERVER_BASE}/api/ping`);
+      if (res.ok) {
+        const data = await res.json();
+        window._serverToken = data.token;
+        return true;
+      }
+    } catch (err) {
+      console.error('Erro ao atualizar token:', err);
+    }
+    return false;
+  }
+
+  async function fetchWithToken(url, options = {}) {
+    if (!options.headers) {
+      options.headers = {};
+    }
+    options.headers['X-Server-Token'] = window._serverToken;
+
+    let res = await fetch(url, options);
+    if (res.status === 401) {
+      const refreshed = await refreshToken();
+      if (refreshed) {
+        options.headers['X-Server-Token'] = window._serverToken;
+        res = await fetch(url, options);
+      }
+    }
+    return res;
+  }
+
+  // Carrega Licenças e Grupos do Servidor
+  async function loadData() {
+    // 1. Licenças
+    try {
+      const res = await fetchWithToken(`${SERVER_BASE}/api/m365/licencas`);
+      if (res.ok) {
+        const data = await res.json();
+        const currentVal = licenseSelect.value;
+        licenseSelect.innerHTML = '<option value="">-- Nenhuma licença selecionada --</option>';
+        (data.licenses || []).forEach(lic => {
+          const opt = document.createElement('option');
+          opt.value = lic.skuId;
+          const friendlyName = getFriendlySkuName(lic.skuPartNumber);
+          opt.textContent = `${friendlyName} (${lic.availableUnits} disponíveis)`;
+          licenseSelect.appendChild(opt);
+        });
+        if (currentVal) {
+          licenseSelect.value = currentVal;
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao obter licenças M365 (Manual):', err);
+    }
+
+    // 2. Grupos
+    try {
+      const res = await fetchWithToken(`${SERVER_BASE}/api/m365/grupos`);
+      if (res.ok) {
+        const data = await res.json();
+        loadedM365Groups = data.groups || [];
+        
+        // Mantém seleção dos grupos válidos
+        const validGroupIds = new Set(loadedM365Groups.map(g => g.id));
+        for (const [id] of selectedM365GroupsMap) {
+          if (!validGroupIds.has(id)) {
+            selectedM365GroupsMap.delete(id);
+          }
+        }
+        renderGroups(groupsSearch ? groupsSearch.value : '');
+      }
+    } catch (err) {
+      console.error('Erro ao obter grupos M365 (Manual):', err);
+    }
+  }
+
+  // Função global invocada quando a aba "Ativar M365" é exibida
+  window._m365ActRefreshData = async function () {
+    if (!window._serverToken) {
+      // Tenta recuperar token caso o servidor tenha reiniciado
+      const refreshed = await refreshToken();
+      if (!refreshed) {
+        setOfflineUI();
+        return;
+      }
+    }
+    
+    termStatus.textContent = 'Verificando conexão...';
+    try {
+      const statusRes = await fetchWithToken(`${SERVER_BASE}/api/m365/status`);
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        const connected = statusData.graphConnected && statusData.exchangeConnected;
+        m365Connected = connected;
+        
+        if (connected) {
+          termStatus.textContent = 'Pronto';
+          btnApply.disabled = false;
+          loadData();
+        } else {
+          setOfflineUI();
+        }
+      } else {
+        setOfflineUI();
+      }
+    } catch (err) {
+      console.error(err);
+      setOfflineUI();
+    }
+  };
+
+  // Clique no botão de Aplicar
+  btnApply.addEventListener('click', async () => {
+    const email = emailEl.value.trim();
+    if (!email) {
+      showToast('Erro: Informe o User Principal Name (E-mail M365).', '#ef4444');
+      return;
+    }
+
+    btnApply.disabled = true;
+    termStatus.textContent = 'Executando...';
+    termOut.innerHTML = '';
+    addTermLine('⚡ Iniciando ativação/configuração do M365 para ' + email + '...', 'info');
+
+    const selectedLicense = licenseSelect.value;
+    const selectedGroups = [];
+    selectedM365GroupsMap.forEach(g => {
+      selectedGroups.push({
+        id: g.id,
+        source: g.source,
+        name: g.name
+      });
+    });
+
+    const m365Payload = {
+      userPrincipalName: email,
+      licenses: selectedLicense ? [selectedLicense] : [],
+      groups: selectedGroups
+    };
+
+    try {
+      const res = await fetchWithToken(`${SERVER_BASE}/api/m365/aplicar`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(m365Payload)
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        for (const line of (data.lines || [])) {
+          addTermLine(line);
+          await new Promise(r => setTimeout(r, 20));
+        }
+        if (data.success) {
+          showToast('M365 / Exchange aplicado com sucesso! ✓');
+          termStatus.textContent = 'Sucesso';
+        } else {
+          showToast('Algumas operações na nuvem falharam.', '#ef4444');
+          termStatus.textContent = 'Falha';
+        }
+      } else {
+        addTermLine('❌ Falha ao comunicar com o endpoint de M365 do servidor.', 'error');
+        termStatus.textContent = 'Erro';
+      }
+    } catch (err) {
+      addTermLine(`❌ Erro no M365: ${err.message}`, 'error');
+      termStatus.textContent = 'Erro';
+    } finally {
+      btnApply.disabled = false;
+    }
+  });
+
+  // Clique em Limpar Log
+  if (termClearBtn) {
+    termClearBtn.addEventListener('click', () => {
+      termOut.innerHTML = 'Aguardando início do processo... Conecte ao M365 no painel lateral antes de iniciar.';
+      termStatus.textContent = 'Pronto';
+    });
+  }
+})();
+
