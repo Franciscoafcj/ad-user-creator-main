@@ -1,0 +1,1876 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Criação de Usuário AD</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  
+  <div class="bg-grid"></div>
+  <div class="crt-scanlines"></div>
+  <div class="crt-glow"></div>
+
+  <div class="desktop-environment">
+    
+    
+    <div class="desktop-window" id="mainOSWindow">
+      
+      
+      <div class="window-titlebar">
+        <div class="titlebar-left">
+          
+          <svg class="titlebar-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="8" r="4"/>
+            <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+            <line x1="19" y1="5" x2="23" y2="5"/>
+            <line x1="21" y1="3" x2="21" y2="7"/>
+          </svg>
+          <span class="titlebar-title">AD_USER_CREATOR.EXE</span>
+        </div>
+        <div class="titlebar-controls">
+          <button class="win-btn win-minimize" title="Minimizar" id="winMinimizeBtn"></button>
+          <button class="win-btn win-maximize" title="Maximizar" id="winMaximizeBtn"></button>
+          <button class="win-btn win-close" title="Desligar" id="winCloseBtn"></button>
+        </div>
+      </div>
+
+      
+      <div class="window-menubar">
+        <div class="menu-item" id="menuBtnSystem"><u>S</u>istema</div>
+        <div class="menu-item" id="menuBtnDoc"><u>D</u>ocumentação ISO</div>
+        <div class="menu-item" id="menuBtnAbout"><u>S</u>obre</div>
+      </div>
+
+      
+      <div class="window-body">
+
+        
+        <div class="system-status-dashboard" id="systemDashboard">
+          <div class="sys-avatar-speech">
+            <div class="sys-avatar-frame border-inset">
+              <svg viewBox="0 0 48 48" class="sys-avatar-svg" width="48" height="48">
+                
+                <rect x="12" y="8" width="24" height="24" fill="#8d998d" stroke="#1a1a1a" stroke-width="2" />
+                <rect x="18" y="14" width="4" height="4" fill="#33ff33" />
+                <rect x="26" y="14" width="4" height="4" fill="#33ff33" />
+                <rect x="20" y="22" width="8" height="2" fill="#1a1a1a" />
+                <rect x="16" y="26" width="16" height="4" fill="#505050" stroke="#1a1a1a" stroke-width="1.5" />
+                
+                <path d="M8 36 L40 36 L40 44 L8 44 Z" fill="#000080" stroke="#1a1a1a" stroke-width="2" />
+              </svg>
+            </div>
+            <div class="sys-speech-bubble">
+              <div class="speech-content" id="sysSpeechText">Inicializando terminal... Aguardando conexão com o servidor local...</div>
+              <div class="speech-arrow"></div>
+            </div>
+          </div>
+          <div class="sys-info-details border-inset">
+            <div class="sys-info-title">PROPRIEDADES DO SISTEMA AD</div>
+            <div class="sys-info-grid">
+              <div class="sys-info-row">
+                <span class="info-label">Servidor Local:</span>
+                <span class="info-value" id="sysValServer"><span class="status-dot dot-red"></span> Offline</span>
+              </div>
+              <div class="sys-info-row">
+                <span class="info-label">Active Directory:</span>
+                <span class="info-value" id="sysValStatus"><span class="status-dot dot-red"></span> Offline</span>
+              </div>
+              <div class="sys-info-row">
+                <span class="info-label">M365 / Cloud:</span>
+                <span class="info-value" id="sysValM365"><span class="status-dot dot-red"></span> Offline</span>
+              </div>
+              <div class="sys-info-row">
+                <button type="button" class="btn-win" id="btnConnectM365" style="width: 100%; padding: 1px 4px; font-size: 9px; min-height: 18px; margin-top: -1px; display: none;">Conectar M365</button>
+              </div>
+              <div class="sys-info-row">
+                <span class="info-label">Domínio:</span>
+                <span class="info-value text-highlight" id="sysValDomain">empresa.com.br</span>
+              </div>
+              <div class="sys-info-row">
+                <span class="info-label">Operador:</span>
+                <span class="info-value" id="sysValUser">—</span>
+              </div>
+              <div class="sys-info-row" style="grid-column: span 2;">
+                <span class="info-label">Base OUs:</span>
+                <span class="info-value" id="sysValOus">Nenhuma OU carregada</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <main class="container">
+          <div class="card-grid">
+
+      
+      <section class="card form-card">
+        <div class="card-header">
+          <h2>Dados do Usuário</h2>
+          <p>Preencha as informações abaixo para gerar o script PowerShell</p>
+        </div>
+
+        <form id="userForm" novalidate>
+
+          
+          <div class="form-group">
+            <label for="fullName">Nome Completo <span class="req">*</span></label>
+            <input type="text" id="fullName" placeholder="Ex: Francisco de Assis Floriano Correa Junior"
+              autocomplete="off" />
+            <span class="field-hint">Será usado o primeiro nome e o último sobrenome para gerar o login</span>
+            <span class="field-error" id="fullNameError"></span>
+          </div>
+          
+          <input type="hidden" id="firstName" />
+          <input type="hidden" id="lastName" />
+
+          
+          <div class="form-group">
+            <label>
+              E-mail
+              <span class="badge badge-auto">Auto</span>
+            </label>
+            <div class="input-readonly-wrap">
+              <input type="text" id="emailPreview" readonly
+                placeholder="primeironome.ultimosobrenome@empresa.com.br" />
+              <button type="button" class="copy-btn" data-target="emailPreview" title="Copiar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          
+          <div class="form-group">
+            <label>
+              Login (SamAccountName)
+              <span class="badge badge-auto">Auto</span>
+            </label>
+            <div class="input-readonly-wrap">
+              <input type="text" id="samPreview" readonly placeholder="primeironome.ultimosobrenome" />
+              <button type="button" class="copy-btn" data-target="samPreview" title="Copiar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              </button>
+            </div>
+
+            
+            <div class="sam-conflict" id="samConflict" style="display:none">
+              <div class="sam-conflict-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span id="samConflictMsg">Login já existe no AD — escolha uma alternativa:</span>
+              </div>
+              <div class="sam-alternatives" id="samAlternatives"></div>
+            </div>
+          </div>
+
+
+          
+          <div class="form-group">
+            <label for="cpf">CPF <span class="req">*</span></label>
+            <div class="input-with-icon">
+              <input type="text" id="cpf" placeholder="000.000.000-00" maxlength="14" autocomplete="off" />
+              <span class="input-icon" id="cpfStatus"></span>
+            </div>
+            <div class="cpf-preview" id="cpfFormatted"></div>
+            <span class="field-error" id="cpfError"></span>
+          </div>
+
+
+          
+          <div class="form-group">
+            <label>Unidade Organizacional (OU)</label>
+            <input type="hidden" id="ou" />
+            <button type="button" class="ou-picker-btn" id="openOuPicker">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              </svg>
+              <span id="ouPickerLabel">Clique para escolher a pasta no AD...</span>
+            </button>
+            <div class="ou-breadcrumb" id="ouBreadcrumb" style="display:none"></div>
+            <span class="field-hint">Deixe sem seleção para usar a OU padrão do domínio</span>
+          </div>
+
+          
+          <div class="form-group">
+            <label for="templateUserSearch">
+              Usuário Modelo
+              <span class="badge badge-optional">Opcional</span>
+            </label>
+            <div class="user-search-wrap" id="userSearchWrap">
+              <div class="user-search-input-wrap">
+                <svg class="user-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
+                <input type="text" id="templateUserSearch"
+                  placeholder="Buscar por nome ou login (ex: joao.silva)..."
+                  autocomplete="off" />
+                <button type="button" class="user-search-clear" id="clearTemplateUser" style="display:none" title="Limpar">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="user-dropdown" id="userDropdown" style="display:none"></div>
+              <div class="template-chip" id="templateChip" style="display:none">
+                <div class="template-chip-avatar" id="templateChipAvatar"></div>
+                <div class="template-chip-info">
+                  <div class="template-chip-name" id="templateChipName"></div>
+                  <div class="template-chip-sam" id="templateChipSam"></div>
+                </div>
+                <button type="button" class="template-chip-remove" id="removeTemplateUser" title="Remover modelo">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <input type="hidden" id="templateUser" />
+            
+            <div class="template-groups-panel" id="templateGroupsPanel" style="display:none"></div>
+            <span class="field-hint">Os grupos de segurança do AD serão copiados para o novo usuário. A OU também será preenchida automaticamente.</span>
+          </div>
+
+
+          
+          <div class="form-group">
+            <label for="domain">Domínio AD <span class="req">*</span></label>
+            <input type="text" id="domain" value="empresa.com.br" placeholder="empresa.com.br" />
+          </div>
+
+          
+          <div class="form-group">
+            <label for="password">Senha Inicial <span class="req">*</span></label>
+            <div class="input-with-icon">
+              <input type="password" id="password" placeholder="Senha temporária" />
+              <button type="button" class="generate-pw" id="generatePw" title="Gerar senha aleatória">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                  <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+                </svg>
+              </button>
+              <button type="button" class="toggle-pw" id="togglePw" title="Mostrar/ocultar senha">
+                <svg id="eyeOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                <svg id="eyeClosed" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2">
+                  <path
+                    d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </svg>
+              </button>
+            </div>
+            <div class="pw-strength" id="pwStrength">
+              <div class="pw-bar" id="pwBar"></div>
+            </div>
+            <span class="field-hint" id="pwHint">Mínimo 8 caracteres</span>
+          </div>
+
+          
+          <div class="form-group toggle-row">
+            <label class="toggle-label" for="mustChange">
+              <span>Forçar troca de senha no próximo login</span>
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="mustChange" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          
+          <div class="form-group toggle-row">
+            <label class="toggle-label" for="enabled">
+              <span>Conta habilitada</span>
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="enabled" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          
+          <div class="m365-section border-inset" id="m365FormSection" style="margin-top: 15px; padding: 10px; background: var(--win-bg); display: none; margin-bottom: 15px;">
+            <div style="font-weight: bold; font-size: 11px; margin-bottom: 8px; text-transform: uppercase; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; color: var(--win-fg);">Licenças & Grupos M365</div>
+            
+            
+            <div class="form-group" style="margin-bottom: 10px;">
+              <label for="m365License">Atribuir Licença M365</label>
+              <select id="m365License" style="width: 100%; height: 24px; font-family: inherit; font-size: 11px; background: var(--win-white); border: 1px solid var(--win-gray);">
+                <option value="">-- Nenhuma licença selecionada --</option>
+              </select>
+            </div>
+
+            
+            <div class="form-group" style="margin-bottom: 0;">
+              <label style="margin-bottom: 4px; display: block;">Adicionar a Grupos da Nuvem</label>
+              <input type="text" id="m365GroupsSearch" placeholder="Pesquisar grupos da nuvem..." style="width: 100%; height: 22px; font-family: inherit; font-size: 11px; padding: 2px 6px; margin-bottom: 6px; border: 1px solid var(--win-gray); background: var(--win-white); box-sizing: border-box;" />
+              <div id="m365GroupsContainer" style="max-height: 145px; overflow-y: auto; background: var(--win-white); border: 1px solid var(--win-gray); padding: 6px 4px; display: flex; flex-direction: column; gap: 2px; font-size: 10px;">
+                <span style="opacity: 0.5; padding: 4px;">Carregando grupos do M365...</span>
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn-generate" id="generateBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="16 18 22 12 16 6" />
+              <polyline points="8 6 2 12 8 18" />
+            </svg>
+            Gerar Script PowerShell
+          </button>
+        </form>
+      </section>
+
+      
+      <section class="card output-card">
+        <div class="card-header">
+          <h2>Script PowerShell</h2>
+          <div class="output-actions" id="outputActions" style="display:none">
+            <button class="btn-sm" id="copyScriptBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              Copiar
+            </button>
+            <button class="btn-sm btn-download" id="downloadBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Baixar .ps1
+            </button>
+            <div class="btn-separator"></div>
+            <button class="btn-sm btn-execute" id="executeBtn" style="display:none" title="Executar via servidor local (Start-Server.ps1)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+              Executar
+            </button>
+          </div>
+        </div>
+
+        <div class="code-area" id="codeArea">
+          <div class="empty-state" id="emptyState">
+            <div class="empty-icon">
+              <svg viewBox="0 0 64 64" fill="none">
+                <rect x="8" y="8" width="48" height="48" rx="8" stroke="#4f46e5" stroke-width="2"
+                  stroke-dasharray="4 3" />
+                <path d="M22 32h20M22 24h12M22 40h8" stroke="#6366f1" stroke-width="2" stroke-linecap="round" />
+              </svg>
+            </div>
+            <p>Preencha o formulário ao lado e clique em <strong>Gerar Script</strong></p>
+          </div>
+          <pre id="scriptOutput" style="display:none"><code id="scriptCode"></code></pre>
+        </div>
+
+        
+        <div class="summary" id="summary" style="display:none">
+          <h3>Resumo do Usuário</h3>
+          <div class="summary-grid" id="summaryGrid"></div>
+        </div>
+
+        
+        <div class="terminal-panel" id="terminalPanel" style="display:none">
+          <div class="terminal-header">
+            <div class="terminal-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+              </svg>
+              Terminal de Execução
+            </div>
+            <div class="terminal-header-right">
+              <span class="terminal-status-badge" id="terminalStatus"></span>
+              <button class="terminal-clear-btn" id="terminalClearBtn" title="Fechar terminal">✕</button>
+            </div>
+          </div>
+          <div class="terminal-output" id="terminalOutput"></div>
+        </div>
+
+        
+        <div class="success-info-panel" id="successInfoPanel" style="display:none">
+          <div class="success-info-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            <span>Usuário Criado com Sucesso</span>
+          </div>
+          <div class="success-info-body">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr class="success-info-row">
+                <td class="success-info-label">Nome:</td>
+                <td class="success-info-value" id="createdUserName"></td>
+              </tr>
+              <tr class="success-info-row">
+                <td class="success-info-label">E-mail:</td>
+                <td class="success-info-value" id="createdUserEmail"></td>
+              </tr>
+              <tr class="success-info-row">
+                <td class="success-info-label">Senha:</td>
+                <td class="success-info-value text-password" id="createdUserPassword"></td>
+              </tr>
+            </table>
+          </div>
+          <div class="success-info-footer">
+            <button type="button" class="btn-sm btn-copy-all" id="copyCreatedInfoBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" style="margin-right:4px;">
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              Copiar Credenciais
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    
+    <section class="card bulk-card">
+      <div class="card-header">
+        <h2>Importação em Lote (CSV)</h2>
+        <p>Cole ou importe um CSV com múltiplos usuários. A OU pode ser definida globalmente abaixo ou individualmente por linha no CSV.</p>
+      </div>
+
+      
+      <div class="bulk-ou-selector" id="bulkOuSelectorRow">
+        <div class="bulk-ou-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          OU padrão do lote
+          <span class="badge badge-optional">Opcional</span>
+        </div>
+
+        
+        <div class="bulk-ou-search-wrap" id="bulkOuSearchWrap">
+          <div class="bulk-ou-input-wrap">
+            <svg class="bulk-ou-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            </svg>
+            <input type="text" id="bulkOuSearch"
+              placeholder="Buscar OU por nome ou caminho (ex: TI, São Paulo)..."
+              autocomplete="off" />
+            <button type="button" class="bulk-ou-clear" id="bulkOuClear" style="display:none" title="Limpar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+          <div class="bulk-ou-dropdown" id="bulkOuDropdown" style="display:none"></div>
+
+          
+          <div class="bulk-ou-chip" id="bulkOuChip" style="display:none">
+            <span class="bulk-ou-chip-icon">📁</span>
+            <div class="bulk-ou-chip-info">
+              <div class="bulk-ou-chip-name" id="bulkOuChipName"></div>
+              <div class="bulk-ou-chip-dn"  id="bulkOuChipDn"></div>
+            </div>
+            <button type="button" class="bulk-ou-chip-remove" id="bulkOuChipRemove" title="Remover OU">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        
+        <input type="hidden" id="bulkOuSelect" />
+
+        <span class="field-hint">Se o CSV não informar OU, esta será usada.</span>
+      </div>
+
+
+      <div class="bulk-layout">
+        <div class="bulk-left">
+          
+          <div class="smart-import-wrap" id="smartImportWrap">
+            <button type="button" class="smart-import-toggle" id="smartImportToggle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                <path d="M2 17l10 5 10-5"/>
+                <path d="M2 12l10 5 10-5"/>
+              </svg>
+              Importar texto livre (Nome/CPF)
+              <span class="smart-import-badge" id="smartImportBadge" style="display:none">0</span>
+              <svg class="smart-import-caret" id="smartImportCaret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
+
+            <div class="smart-import-body" id="smartImportBody" style="display:none">
+              <p class="smart-import-desc">
+                Cole qualquer texto com <code>Nome:</code> e <code>CPF:</code> — o sistema extrai e converte automaticamente para CSV.
+              </p>
+
+              <textarea id="smartImportInput"
+                class="smart-import-textarea"
+                placeholder="Nome: HALEY SETEMBRINO DE ABREU E SILVA FILHO&#10;CPF: 88511626891&#10;Matrícula: 18/1461&#10;___________________&#10;Nome: LUÍS CARLOS DE ALMEIDA NEVES&#10;CPF: 031.008.588-83&#10;..."></textarea>
+
+              <div class="smart-import-options">
+                <div class="smart-import-pw-info">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                  </svg>
+                  Senha gerada automaticamente por usuário:
+                  <code>Senh@ + 4 dígitos aleatórios</code>
+                  <span class="smart-pw-example">Ex: Senh@5678</span>
+                </div>
+                <button type="button" class="btn-smart-convert" id="smartImportConvertBtn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="16 18 22 12 16 6"/>
+                    <polyline points="8 6 2 12 8 18"/>
+                  </svg>
+                  Converter para CSV
+                </button>
+              </div>
+
+              <div class="smart-import-result" id="smartImportResult" style="display:none">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                <span id="smartImportResultMsg"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="csv-hint">
+            <strong>Formato esperado (sem cabeçalho ou com cabeçalho):</strong>
+            <code>NomeCompleto,CPF,Senha</code>
+            <span class="csv-hint-tip">Cada linha = um usuário. A OU é definida pelo seletor acima.</span>
+          </div>
+          <textarea id="csvInput"
+            placeholder="João Pereira da Silva,123.456.789-09,Senha@2025&#10;Maria Santos Oliveira Junior,98765432100,Senha@2025"></textarea>
+          
+          <div class="form-group" style="margin-top:12px;">
+            <label for="templateUserSearchBulk">
+              Usuário Modelo
+              <span class="badge badge-optional">Opcional</span>
+            </label>
+            <div class="user-search-wrap" id="userSearchWrapBulk">
+              <div class="user-search-input-wrap">
+                <svg class="user-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
+                <input type="text" id="templateUserSearchBulk"
+                  placeholder="Buscar por nome ou login (ex: joao.silva)..."
+                  autocomplete="off" />
+                <button type="button" class="user-search-clear" id="clearTemplateUserBulk" style="display:none" title="Limpar">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="user-dropdown" id="userDropdownBulk" style="display:none"></div>
+              <div class="template-chip" id="templateChipBulk" style="display:none">
+                <div class="template-chip-avatar" id="templateChipAvatarBulk"></div>
+                <div class="template-chip-info">
+                  <div class="template-chip-name" id="templateChipNameBulk"></div>
+                  <div class="template-chip-sam" id="templateChipSamBulk"></div>
+                </div>
+                <button type="button" class="template-chip-remove" id="removeTemplateUserBulk" title="Remover modelo">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <input type="hidden" id="templateUserBulk" />
+            
+            <div class="template-groups-panel" id="templateGroupsPanelBulk" style="display:none"></div>
+            <span class="field-hint">Os grupos de segurança do AD serão copiados para todos os novos usuários</span>
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn-generate btn-sm-variant" id="bulkParseBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              Analisar CSV
+            </button>
+          </div>
+        </div>
+
+        
+        <div class="bulk-preview-area" id="bulkPreviewArea" style="display:none">
+          <div class="bulk-preview-header">
+            <div class="bulk-preview-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+              Pré-visualização do Lote
+            </div>
+            <div class="bulk-preview-stats" id="bulkPreviewStats"></div>
+          </div>
+
+          <div class="bulk-preview-scroll">
+            <table class="bulk-preview-table" id="bulkPreviewTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Nome Completo</th>
+                  <th>Login (SAM)</th>
+                  <th>E-mail</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="bulkPreviewBody"></tbody>
+            </table>
+          </div>
+
+          <div class="bulk-preview-footer">
+            <span class="bulk-preview-note" id="bulkPreviewNote"></span>
+            <div class="bulk-preview-actions">
+              <button class="btn-sm" id="bulkCancelPreviewBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+                Cancelar
+              </button>
+              <button class="btn-generate btn-sm-variant" id="bulkBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+                Confirmar e Gerar Script
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bulk-right">
+          <div class="code-area bulk-code" id="bulkCodeArea">
+            <div class="empty-state" id="bulkEmptyState">
+              <p>O script em lote aparecerá aqui</p>
+            </div>
+            <pre id="bulkOutput" style="display:none"><code id="bulkCode"></code></pre>
+          </div>
+          <div class="bulk-output-actions" id="bulkOutputActions" style="display:none">
+            <button class="btn-sm btn-execute" id="executeBulkBtn" style="display:none" title="Executar via servidor local (Start-Server.ps1)">
+              🚀 Executar no Servidor
+            </button>
+            <button class="btn-sm" id="copyBulkBtn">Copiar</button>
+            <button class="btn-sm btn-download" id="downloadBulkBtn">Baixar .ps1</button>
+          </div>
+          
+          
+          <div class="terminal-panel" id="bulkTerminalPanel" style="display:none; margin-top: 1rem;">
+            <div class="terminal-header">
+              <div class="terminal-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+                </svg>
+                Terminal de Execução
+              </div>
+              <div class="terminal-header-right">
+                <span class="terminal-status-badge" id="bulkTerminalStatus"></span>
+                <button class="terminal-clear-btn" id="bulkTerminalClearBtn" title="Fechar terminal">✕</button>
+              </div>
+            </div>
+            <div class="terminal-output" id="bulkTerminalOutput"></div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+
+  </main>
+
+  
+  <div class="disable-panel" id="panelDisable" style="display:none">
+    <div class="container">
+
+      
+      <div class="disable-subtab-nav">
+        <button class="disable-subtab-btn active" id="disSubBtnSingle" aria-controls="disSubPanelSingle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+          Individual
+        </button>
+        <button class="disable-subtab-btn" id="disSubBtnBulk" aria-controls="disSubPanelBulk">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          Em Lote
+          <span class="disable-bulk-badge" id="disableBulkCount" style="display:none">0</span>
+        </button>
+      </div>
+
+      
+      <div id="disSubPanelSingle">
+      <div class="card-grid">
+
+        
+        <section class="card form-card">
+          <div class="card-header">
+            <h2>Buscar Usuário</h2>
+            <p>Pesquise pelo nome ou login do usuário que deseja desabilitar</p>
+          </div>
+
+          <div class="disable-form-body">
+
+            
+            <div class="form-group">
+              <label for="disableUserSearch">Usuário do Active Directory <span class="req">*</span></label>
+              <div class="user-search-wrap" id="disableSearchWrap">
+                <div class="user-search-input-wrap">
+                  <svg class="user-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  <input type="text" id="disableUserSearch"
+                    placeholder="Buscar por nome ou login (ex: joao.silva)..."
+                    autocomplete="off" />
+                  <button type="button" class="user-search-clear" id="clearDisableUser" style="display:none" title="Limpar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </div>
+                <div class="user-dropdown" id="disableUserDropdown" style="display:none"></div>
+
+                
+                <div class="disable-user-chip" id="disableUserChip" style="display:none">
+                  <div class="disable-chip-avatar" id="disableChipAvatar"></div>
+                  <div class="disable-chip-info">
+                    <div class="disable-chip-name" id="disableChipName"></div>
+                    <div class="disable-chip-meta" id="disableChipMeta"></div>
+                  </div>
+                  <div class="disable-chip-status" id="disableChipStatus"></div>
+                  <button type="button" class="template-chip-remove" id="removeDisableUser" title="Remover">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <input type="hidden" id="disableUserSam" />
+              <span class="field-hint">O script de desabilitação será gerado com base no usuário selecionado</span>
+            </div>
+
+            
+            <div class="form-group">
+              <label for="disableReason">
+                Motivo
+                <span class="badge badge-optional">Opcional</span>
+              </label>
+              <input type="text" id="disableReason"
+                placeholder="Ex: Desligamento, Férias prolongadas, Conta comprometida..." />
+              <span class="field-hint">Será adicionado como comentário no script gerado</span>
+            </div>
+
+            
+            <div class="disable-options">
+              <div class="form-group toggle-row">
+                <label class="toggle-label" for="disableMoveOu">
+                  <span>Mover para OU de desabilitados</span>
+                </label>
+                <label class="switch">
+                  <input type="checkbox" id="disableMoveOu" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="form-group" id="disableOuRow" style="display:none">
+                <label>OU de destino</label>
+                <div class="bulk-ou-wrap" style="margin-top:6px">
+                  <div class="bulk-ou-input-wrap">
+                    <span class="bulk-ou-prefix-icon">📁</span>
+                    <input type="text" id="disableOuSearch"
+                      placeholder="Buscar OU por nome ou caminho..."
+                      autocomplete="off" />
+                    <button type="button" class="bulk-ou-clear" id="disableOuClear" style="display:none" title="Limpar">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </button>
+                  </div>
+                  <div class="bulk-ou-dropdown" id="disableOuDrop" style="display:none"></div>
+                  <div class="bulk-ou-chip" id="disableOuChip" style="display:none">
+                    <span class="bulk-ou-chip-icon">📁</span>
+                    <div class="bulk-ou-chip-info">
+                      <div class="bulk-ou-chip-name" id="disableOuChipName"></div>
+                      <div class="bulk-ou-chip-dn"  id="disableOuChipDn"></div>
+                    </div>
+                    <button type="button" class="bulk-ou-chip-remove" id="disableOuChipRemove" title="Remover">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <input type="hidden" id="disableOuSelect" />
+              </div>
+              <div class="form-group toggle-row">
+                <label class="toggle-label" for="disableExpirePassword">
+                  <span>Expirar senha imediatamente</span>
+                </label>
+                <label class="switch">
+                  <input type="checkbox" id="disableExpirePassword" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+
+              
+              <div class="form-group toggle-row" id="disableM365Row" style="display: none;">
+                <label class="toggle-label" for="disableRemoveLicensesM365">
+                  <span>Remover licenças e grupos M365 (Nuvem / Exchange)</span>
+                </label>
+                <label class="switch">
+                  <input type="checkbox" id="disableRemoveLicensesM365" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <button type="button" class="btn-generate btn-danger-gradient" id="generateDisableBtn" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+              </svg>
+              Gerar Script de Desabilitação
+            </button>
+          </div>
+        </section>
+
+        
+        <section class="card output-card">
+          <div class="card-header">
+            <h2>Script PowerShell</h2>
+            <div class="output-actions" id="disableOutputActions" style="display:none">
+              <button class="btn-sm" id="copyDisableScriptBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+                Copiar
+              </button>
+              <button class="btn-sm btn-download" id="downloadDisableBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                Baixar .ps1
+              </button>
+              <div class="btn-separator"></div>
+              <button class="btn-sm btn-execute" id="executeDisableBtn" style="display:none" title="Executar via servidor local">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                Executar
+              </button>
+            </div>
+          </div>
+
+          <div class="code-area" id="disableCodeArea">
+            <div class="empty-state" id="disableEmptyState">
+              <div class="empty-icon">
+                <svg viewBox="0 0 64 64" fill="none">
+                  <circle cx="32" cy="32" r="28" stroke="#ef4444" stroke-width="2" stroke-dasharray="4 3"/>
+                  <line x1="16" y1="16" x2="48" y2="48" stroke="#ef444488" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <p>Selecione um usuário e clique em <strong>Gerar Script</strong></p>
+            </div>
+            <pre id="disableScriptOutput" style="display:none"><code id="disableScriptCode"></code></pre>
+          </div>
+
+          
+          <div class="summary" id="disableSummary" style="display:none">
+            <h3>Resumo da Ação</h3>
+            <div class="summary-grid" id="disableSummaryGrid"></div>
+          </div>
+
+          
+          <div class="terminal-panel" id="disableTerminalPanel" style="display:none">
+            <div class="terminal-header">
+              <div class="terminal-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+                </svg>
+                Terminal de Execução
+              </div>
+              <div class="terminal-header-right">
+                <span class="terminal-status-badge" id="disableTerminalStatus"></span>
+                <button class="terminal-clear-btn" id="disableTerminalClearBtn" title="Fechar terminal">✕</button>
+              </div>
+            </div>
+            <div class="terminal-output" id="disableTerminalOutput"></div>
+          </div>
+        </section>
+
+      </div>
+      </div>
+
+      
+      <div id="disSubPanelBulk" style="display:none">
+        <div class="card-grid">
+
+          
+          <section class="card form-card">
+            <div class="card-header">
+              <h2>Usuários a Desabilitar</h2>
+              <p>Adicione usuários à lista; o script desabilitará todos de uma vez</p>
+            </div>
+
+            <div class="disable-form-body">
+
+              
+              <div class="smart-import-wrap" id="disableBulkSmartWrap">
+                <button type="button" class="smart-import-toggle" id="disableBulkSmartToggle">
+                  <span class="smart-import-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                      <line x1="12" y1="18" x2="12" y2="12"></line>
+                      <line x1="9" y1="15" x2="15" y2="15"></line>
+                    </svg>
+                  </span>
+                  <span class="smart-import-title">Importação Inteligente (Lista/CSV)</span>
+                  <span class="smart-import-badge" id="disableBulkSmartBadge" style="display:none">0</span>
+                  <svg class="smart-import-caret" id="disableBulkSmartCaret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+                <div class="smart-import-body" id="disableBulkSmartBody" style="display:none">
+                  <p class="smart-import-desc">
+                    Cole uma lista de nomes, logins (SAM) ou emails. O sistema validará as contas e adicionará à fila.
+                  </p>
+                  <textarea id="disableBulkSmartText" class="smart-import-textarea" placeholder="Exemplo:&#10;joao.silva&#10;maria.souza"></textarea>
+                  <div class="smart-import-options">
+                    <button type="button" class="btn-sm" id="disableBulkProcessSmartBtn">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                      </svg>
+                      Processar Dados
+                    </button>
+                    <button type="button" class="btn-sm btn-ghost" id="disableBulkClearSmartBtn">Limpar</button>
+                  </div>
+                  <div class="smart-import-result" id="disableBulkSmartResult" style="display:none"></div>
+                </div>
+              </div>
+
+              
+              <div class="form-group">
+                <label for="disableBulkSearch">Buscar e adicionar usuário</label>
+                <div class="user-search-wrap" id="disableBulkSearchWrap">
+                  <div class="user-search-input-wrap">
+                    <svg class="user-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    <input type="text" id="disableBulkSearch"
+                      placeholder="Buscar por nome ou login (ex: joao.silva)..."
+                      autocomplete="off" />
+                    <button type="button" class="user-search-clear" id="clearDisableBulkSearch" style="display:none" title="Limpar">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </button>
+                  </div>
+                  <div class="user-dropdown" id="disableBulkDropdown" style="display:none"></div>
+                </div>
+                <span class="field-hint">Digite para buscar — clique no usuário para adicioná-lo à lista</span>
+              </div>
+
+              
+              <div class="disable-bulk-list-wrap" id="disableBulkListWrap" style="display:none">
+                <div class="disable-bulk-list-header">
+                  <span id="disableBulkListLabel">0 usuários na fila</span>
+                  <button type="button" class="disable-bulk-clear-all" id="disableBulkClearAll" title="Remover todos">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                    </svg>
+                    Limpar tudo
+                  </button>
+                </div>
+                <div class="disable-bulk-list" id="disableBulkList"></div>
+              </div>
+
+              
+              <div class="form-group">
+                <label for="disableBulkReason">
+                  Motivo Global
+                  <span class="badge badge-optional">Opcional</span>
+                </label>
+                <input type="text" id="disableBulkReason"
+                  placeholder="Ex: Desligamento em massa, Reestruturação..." />
+                <span class="field-hint">Aplicado a todos os usuários do lote</span>
+              </div>
+
+              
+              <div class="disable-options">
+                <div class="form-group toggle-row">
+                  <label class="toggle-label" for="disableBulkMoveOu">
+                    <span>Mover para OU de desabilitados</span>
+                  </label>
+                  <label class="switch">
+                    <input type="checkbox" id="disableBulkMoveOu" />
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div class="form-group" id="disableBulkOuRow" style="display:none">
+                  <label>OU de destino</label>
+                  <div class="bulk-ou-wrap" style="margin-top:6px">
+                    <div class="bulk-ou-input-wrap">
+                      <span class="bulk-ou-prefix-icon">📁</span>
+                      <input type="text" id="disableBulkOuSearch"
+                        placeholder="Buscar OU por nome ou caminho..."
+                        autocomplete="off" />
+                      <button type="button" class="bulk-ou-clear" id="disableBulkOuClear" style="display:none" title="Limpar">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                      </button>
+                    </div>
+                    <div class="bulk-ou-dropdown" id="disableBulkOuDrop" style="display:none"></div>
+                    <div class="bulk-ou-chip" id="disableBulkOuChip" style="display:none">
+                      <span class="bulk-ou-chip-icon">📁</span>
+                      <div class="bulk-ou-chip-info">
+                        <div class="bulk-ou-chip-name" id="disableBulkOuChipName"></div>
+                        <div class="bulk-ou-chip-dn"  id="disableBulkOuChipDn"></div>
+                      </div>
+                      <button type="button" class="bulk-ou-chip-remove" id="disableBulkOuChipRemove" title="Remover">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <input type="hidden" id="disableBulkOuSelect" />
+                </div>
+                <div class="form-group toggle-row">
+                  <label class="toggle-label" for="disableBulkExpire">
+                    <span>Expirar senha imediatamente</span>
+                  </label>
+                  <label class="switch">
+                    <input type="checkbox" id="disableBulkExpire" checked />
+                    <span class="slider"></span>
+                  </label>
+                </div>
+
+                
+                <div class="form-group toggle-row" id="disableBulkM365Row" style="display: none;">
+                  <label class="toggle-label" for="disableBulkRemoveLicensesM365">
+                    <span>Remover licenças e grupos M365 (Nuvem / Exchange)</span>
+                  </label>
+                  <label class="switch">
+                    <input type="checkbox" id="disableBulkRemoveLicensesM365" />
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </div>
+
+              <button type="button" class="btn-generate btn-danger-gradient" id="generateBulkDisableBtn" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                Gerar Script de Desabilitação em Lote
+              </button>
+            </div>
+          </section>
+
+          
+          <section class="card output-card">
+            <div class="card-header">
+              <h2>Script PowerShell — Lote</h2>
+              <div class="output-actions" id="disableBulkOutputActions" style="display:none">
+                <button class="btn-sm" id="copyDisableBulkBtn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
+                  Copiar
+                </button>
+                <button class="btn-sm btn-download" id="downloadDisableBulkBtn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  Baixar .ps1
+                </button>
+                <div class="btn-separator"></div>
+                <button class="btn-sm btn-execute" id="executeDisableBulkBtn" style="display:none" title="Executar via servidor local">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                  </svg>
+                  Executar
+                </button>
+              </div>
+            </div>
+
+            <div class="code-area" id="disableBulkCodeArea">
+              <div class="empty-state" id="disableBulkEmptyState">
+                <div class="empty-icon">
+                  <svg viewBox="0 0 64 64" fill="none">
+                    <circle cx="32" cy="32" r="28" stroke="#ef4444" stroke-width="2" stroke-dasharray="4 3"/>
+                    <line x1="16" y1="16" x2="48" y2="48" stroke="#ef444488" stroke-width="2" stroke-linecap="round"/>
+                    <circle cx="22" cy="22" r="5" stroke="#ef444466" stroke-width="1.5"/>
+                    <circle cx="42" cy="42" r="5" stroke="#ef444466" stroke-width="1.5"/>
+                  </svg>
+                </div>
+                <p>Adicione usuários à lista e clique em <strong>Gerar Script</strong></p>
+              </div>
+              <pre id="disableBulkScriptOutput" style="display:none"><code id="disableBulkScriptCode"></code></pre>
+            </div>
+
+            
+            <div class="summary" id="disableBulkSummary" style="display:none">
+              <h3>Resumo do Lote</h3>
+              <div class="summary-grid" id="disableBulkSummaryGrid"></div>
+            </div>
+
+            
+            <div class="terminal-panel" id="disableBulkTerminalPanel" style="display:none">
+              <div class="terminal-header">
+                <div class="terminal-title">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+                  </svg>
+                  Terminal de Execução
+                </div>
+                <div class="terminal-header-right">
+                  <span class="terminal-status-badge" id="disableBulkTerminalStatus"></span>
+                  <button class="terminal-clear-btn" id="disableBulkTerminalClearBtn" title="Fechar terminal">✕</button>
+                </div>
+              </div>
+              <div class="terminal-output" id="disableBulkTerminalOutput"></div>
+            </div>
+          </section>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  
+  <div class="locked-panel" id="panelLocked" style="display:none">
+    <div class="container">
+
+      
+      <div class="locked-panel-header">
+        <div class="locked-panel-title">
+          <div class="locked-panel-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <div>
+            <h2>Usuários Bloqueados na Rede</h2>
+            <p>Monitoramento automático a cada 60 segundos via Active Directory</p>
+          </div>
+        </div>
+        <div class="locked-panel-actions" style="align-items: center; gap: 16px;">
+          <label class="toggle-row" style="margin:0; display:flex; align-items:center; gap:8px; cursor:pointer;" title="Mostrar apenas bloqueados hoje">
+            <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">Apenas de hoje</span>
+            <label class="switch" style="margin:0;">
+              <input type="checkbox" id="lockedFilterToday" />
+              <span class="slider"></span>
+            </label>
+          </label>
+          <div class="locked-countdown-wrap" id="lockedCountdownWrap" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            Próxima verificação em <span id="lockedCountdown">60</span>s
+          </div>
+          <button class="btn-check-now" id="lockedCheckNow" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="1 4 1 10 7 10"/>
+              <path d="M3.51 15a9 9 0 1 0 .49-4"/>
+            </svg>
+            Verificar agora
+          </button>
+        </div>
+      </div>
+
+      
+      <div class="locked-offline-banner" id="lockedOfflineBanner" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <div>
+          <strong>Servidor offline</strong> — Execute <code>Start-Server.ps1</code> para ativar o monitoramento automático.
+        </div>
+      </div>
+
+      
+      <div class="locked-status-bar" id="lockedStatusBar" style="display:none">
+        <span class="locked-status-dot" id="lockedStatusDot"></span>
+        <span id="lockedStatusText">Aguardando primeira verificação...</span>
+        <span class="locked-status-time" id="lockedLastCheck"></span>
+      </div>
+
+      
+      <div class="locked-table-wrap" id="lockedTableWrap">
+
+        
+        <div class="locked-empty" id="lockedEmpty" style="display:none">
+          <div class="locked-empty-icon">
+            <svg viewBox="0 0 64 64" fill="none">
+              <rect x="8" y="28" width="48" height="30" rx="6" stroke="#10b981" stroke-width="2"/>
+              <path d="M20 28V20a12 12 0 0 1 24 0v8" stroke="#10b981" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="32" cy="43" r="3" fill="#10b981" opacity=".7"/>
+            </svg>
+          </div>
+          <p class="locked-empty-msg">Nenhum usuário bloqueado encontrado</p>
+          <p class="locked-empty-sub">Todos os usuários estão com acesso liberado na rede.</p>
+        </div>
+
+        
+        <div class="locked-initial" id="lockedInitial">
+          <div class="locked-initial-icon">
+            <svg viewBox="0 0 64 64" fill="none">
+              <rect x="8" y="28" width="48" height="30" rx="6" stroke="#6366f1" stroke-width="2" stroke-dasharray="4 3"/>
+              <path d="M20 28V20a12 12 0 0 1 24 0v8" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-dasharray="4 3"/>
+              <circle cx="12" cy="12" r="10" stroke="#6366f188" stroke-width="1.5" stroke-dasharray="3 2"/>
+              <polyline points="12 7 12 12 15 14" stroke="#6366f188" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <p class="locked-initial-msg">Monitoramento iniciará em breve</p>
+          <p class="locked-initial-sub">Conecte o servidor local para ativar a verificação automática.</p>
+        </div>
+
+        
+        <table class="locked-table" id="lockedTable" style="display:none">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Usuário</th>
+              <th>Login (SAM)</th>
+              <th>Departamento</th>
+              <th id="lockedSortCol" style="cursor:pointer; user-select:none;" title="Clique para ordenar">Última tentativa inválida <span id="lockedSortIcon">⬇️</span></th>
+              <th>Tentativas</th>
+              <th>Ação</th>
+            </tr>
+          </thead>
+          <tbody id="lockedTableBody">
+          </tbody>
+        </table>
+      </div>
+
+      
+      <div class="terminal-panel" id="lockedTerminalPanel" style="display:none">
+        <div class="terminal-header">
+          <div class="terminal-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+            </svg>
+            Terminal — Desbloqueio
+          </div>
+          <div class="terminal-header-right">
+            <span class="terminal-status-badge" id="lockedTerminalStatus"></span>
+            <button class="terminal-clear-btn" id="lockedTerminalClearBtn" title="Fechar terminal">✕</button>
+          </div>
+        </div>
+        <div class="terminal-output" id="lockedTerminalOutput"></div>
+      </div>
+
+    </div>
+  </div>
+
+  
+  <div class="computers-panel" id="panelComputers" style="display:none">
+    <div class="container">
+      
+      
+      <div class="locked-panel-header">
+        <div class="locked-panel-title">
+          <div class="locked-panel-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+          </div>
+          <div>
+            <h2>Leitor de Diagnóstico — Hardware</h2>
+            <p>Importe arquivos JSON de diagnóstico para visualizar as especificações</p>
+          </div>
+        </div>
+        <div class="locked-panel-actions" style="align-items: center; gap: 12px;">
+          <button class="btn-check-now" id="compClearAllBtn" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+              <path d="M10 11v6"/><path d="M14 11v6"/>
+            </svg>
+            Limpar Tudo
+          </button>
+        </div>
+      </div>
+
+      
+      <div class="card-grid" style="grid-template-columns: 300px 1fr;">
+        
+        
+        <section class="card form-card" style="height: 620px; display: flex; flex-direction: column;">
+          <div class="card-header" style="flex-shrink:0;">
+            <h2>Arquivos JSON</h2>
+            <p>Importe relatórios de diagnóstico</p>
+          </div>
+          
+          
+          <div style="padding: 10px; flex-shrink: 0; background: var(--win-bg); border-bottom: 1px solid var(--win-gray);">
+            <div class="comp-upload-zone" id="compUploadZone" style="border: 2px dashed var(--win-fg); background: var(--win-white); padding: 14px 10px; text-align: center; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 70px; transition: background 0.1s;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width: 22px; height: 22px; opacity: 0.5; margin-bottom: 4px;">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <span style="font-size: 10px; font-weight: bold;">Arraste arquivos JSON ou clique aqui</span>
+              <span style="font-size: 9px; color: var(--win-gray); margin-top: 2px;">(Suporta múltiplos arquivos)</span>
+            </div>
+            <input type="file" id="compFileInput" multiple accept=".json" style="display:none;" />
+          </div>
+
+          
+          <div style="flex: 1; overflow-y: auto; background-color: var(--win-white);">
+            <div id="compFileList" style="display: flex; flex-direction: column;">
+              
+            </div>
+            <div id="compFileListEmpty" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 30px 16px; text-align: center; color: var(--win-gray);">
+              <svg viewBox="0 0 64 64" fill="none" style="width: 40px; height: 40px; margin-bottom: 8px; opacity: 0.3;">
+                <rect x="12" y="8" width="40" height="48" rx="4" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"/>
+                <path d="M24 24h16M24 32h12M24 40h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <span style="font-size: 11px; font-weight: bold;">Nenhum arquivo carregado</span>
+              <span style="font-size: 10px; margin-top: 4px;">Arraste arquivos JSON acima para começar</span>
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="card output-card" style="height: 620px; display: flex; flex-direction: column;">
+          <div class="card-header" style="flex-shrink:0;">
+            <h2>Especificações do Computador</h2>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <p id="compHeaderName">Nenhum arquivo selecionado</p>
+              <span id="compHeaderDate" style="font-size: 10px; color: var(--win-gray); display: none;"></span>
+            </div>
+          </div>
+          
+          
+          <div id="compDetailsEmpty" style="display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; padding: 40px; text-align: center; background: var(--win-bg);">
+            <svg viewBox="0 0 64 64" fill="none" style="width: 48px; height: 48px; margin-bottom: 12px; opacity: 0.25;">
+              <rect x="8" y="4" width="48" height="56" rx="4" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"/>
+              <path d="M20 20h24M20 28h18M20 36h24M20 44h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+            </svg>
+            <p style="font-weight: bold; font-size: 13px; opacity: 0.6;">Nenhum relatório selecionado</p>
+            <p style="font-size: 11px; color: var(--win-gray); max-width: 280px; margin-top: 6px;">
+              Importe um arquivo JSON de diagnóstico e selecione-o na lista à esquerda para visualizar os dados.
+            </p>
+          </div>
+
+          
+          <div id="compDetailsContent" style="display: none; padding: 14px; overflow-y: auto; flex: 1; flex-direction: column; gap: 12px; background: var(--win-white); color: var(--win-fg);">
+            
+          </div>
+        </section>
+
+      </div>
+
+    </div>
+  </div>
+
+  
+  <div class="locked-panel" id="panelM365" style="display:none">
+    <div class="container">
+      <div class="card-grid">
+        
+        <section class="card form-card" style="height: 620px; display: flex; flex-direction: column;">
+          <div class="card-header" style="flex-shrink:0;">
+            <h2>Ativação M365 (Manual)</h2>
+            <p>Aplique licenças e grupos diretamente na nuvem</p>
+          </div>
+
+          <div style="flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; background: var(--win-white);">
+            
+            
+            <div class="form-group">
+              <label for="m365ActUserSearch">Buscar Usuário do AD (para preenchimento)</label>
+              <div class="user-search-wrap" id="m365ActSearchWrap">
+                <div class="user-search-input-wrap">
+                  <svg class="user-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  <input type="text" id="m365ActUserSearch" placeholder="Buscar por nome ou login..." autocomplete="off" />
+                  <button type="button" class="user-search-clear" id="clearM365ActUser" style="display:none" title="Limpar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </div>
+                <div class="user-dropdown" id="m365ActUserDropdown" style="display:none"></div>
+
+                
+                <div class="disable-user-chip" id="m365ActUserChip" style="display:none">
+                  <div class="disable-chip-avatar" id="m365ActChipAvatar"></div>
+                  <div class="disable-chip-info">
+                    <div class="disable-chip-name" id="m365ActChipName"></div>
+                    <div class="disable-chip-meta" id="m365ActChipMeta"></div>
+                  </div>
+                  <button type="button" class="template-chip-remove" id="removeM365ActUser" title="Remover">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            
+            <div class="form-group">
+              <label for="m365ActEmail">User Principal Name (E-mail M365) <span class="req">*</span></label>
+              <input type="email" id="m365ActEmail" placeholder="usuario@empresa.com.br" style="width:100%; box-sizing:border-box; height:24px; padding:2px 6px; font-family:inherit; font-size:11px;" />
+            </div>
+
+            
+            <div class="form-group">
+              <label for="m365ActLicense">Atribuir Licença</label>
+              <select id="m365ActLicense" style="width: 100%; height: 24px; background: var(--win-white); border: 1px solid var(--win-gray); font-family:inherit; font-size:11px;">
+                <option value="">-- Nenhuma licença selecionada --</option>
+              </select>
+            </div>
+
+            
+            <div class="form-group" style="margin-bottom: 0;">
+              <label style="margin-bottom: 4px; display: block;">Adicionar a Grupos da Nuvem</label>
+              <input type="text" id="m365ActGroupsSearch" placeholder="Pesquisar grupos da nuvem..." style="width: 100%; height: 22px; padding: 2px 6px; margin-bottom: 6px; border: 1px solid var(--win-gray); background: var(--win-white); box-sizing: border-box; font-family:inherit; font-size:11px;" />
+              <div id="m365ActGroupsContainer" style="max-height: 150px; overflow-y: auto; background: var(--win-white); border: 1px solid var(--win-gray); padding: 6px 4px; display: flex; flex-direction: column; gap: 2px; font-size: 10px;">
+                <span style="opacity: 0.5; padding: 4px;">Conecte ao M365 na barra lateral para carregar grupos.</span>
+              </div>
+            </div>
+
+          </div>
+
+          <div style="padding: 10px; background: var(--win-bg); border-top: 1px solid var(--win-gray); flex-shrink:0;">
+            <button type="button" class="btn-generate btn-primary-gradient" id="btnM365ActApply" style="width:100%">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px; height:14px; margin-right:4px; vertical-align:middle;">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+              Aplicar Licenças e Grupos na Nuvem
+            </button>
+          </div>
+        </section>
+
+        
+        <section class="card output-card" style="height: 620px; display: flex; flex-direction: column;">
+          <div class="card-header" style="flex-shrink:0;">
+            <h2>Terminal de Ativação Cloud</h2>
+            <p>Acompanhe a execução das alterações no Azure/Exchange em tempo real</p>
+          </div>
+          
+          <div class="terminal-panel" id="m365ActTerminalPanel" style="display:flex; flex:1; flex-direction:column; margin:0; border:none; height:100%;">
+            <div class="terminal-header" style="flex-shrink:0;">
+              <div class="terminal-title">m365-activation-log.sh</div>
+              <div class="terminal-status" id="m365ActTerminalStatus">Pronto</div>
+            </div>
+            <div class="terminal-output" id="m365ActTerminalOutput" style="flex:1; overflow-y:auto; font-family:var(--font-mono); font-size:10px; background:#000; color:#0f0; padding:10px; border:1px inset var(--win-gray); height:420px; box-sizing:border-box;">
+              Aguardando início do processo... Conecte ao M365 no painel lateral antes de iniciar.
+            </div>
+            <div style="padding:8px; background:var(--win-bg); border-top:1px solid var(--win-gray); display:flex; justify-content:flex-end; flex-shrink:0;">
+              <button class="btn-sm" id="m365ActTerminalClearBtn">Limpar Log</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  
+  <div class="modal-backdrop" id="ouModal" style="display:none">
+    <div class="modal border-outset">
+      <div class="modal-header window-titlebar">
+        <div class="modal-title">
+          
+          <svg class="pixel-icon" viewBox="0 0 16 16" width="16" height="16" style="margin-right:6px">
+            <rect x="2" y="3" width="5" height="2" fill="#d69e2e" />
+            <rect x="2" y="5" width="12" height="8" fill="#ecc94b" />
+            <rect x="1" y="6" width="14" height="6" fill="#ecc94b" />
+          </svg>
+          Selecionar Unidade Organizacional (OU)
+        </div>
+        <button class="modal-close win-btn win-close" id="closeOuModal" title="Fechar"></button>
+      </div>
+
+      <div class="modal-body">
+        
+        <div class="tree-panel border-inset">
+          <div class="tree-search">
+            <input type="text" id="treeSearch" placeholder="Buscar OU..." autocomplete="off" />
+          </div>
+          <div class="tree-root" id="adTree"></div>
+        </div>
+
+        
+        <div class="detail-panel border-inset" style="display: flex; flex-direction: column; height: 100%; min-height: 0;">
+          <div class="detail-selected" id="detailSelected" style="flex-shrink: 0; padding: 8px 10px;">
+            <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
+              <div class="detail-icon" id="detailIcon" style="font-size: 24px; line-height: 1;">📁</div>
+              <div style="display: flex; flex-direction: column; min-width: 0; flex: 1; text-align: left;">
+                <div id="detailName" class="detail-name" style="font-size: 13px; font-weight: bold;">Nenhuma pasta selecionada</div>
+                <div id="detailDn" class="detail-dn" style="font-size: 9px; color: var(--win-gray); word-break: break-all;">—</div>
+              </div>
+            </div>
+          </div>
+
+          
+          <div class="detail-user-search border-outset" id="detailUserSearchBox" style="display: none; padding: 6px 10px; margin-top: 6px; flex-shrink: 0;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 10px; font-weight: bold; color: var(--win-fg); white-space: nowrap;">Filtro:</span>
+              <input type="text" id="detailUserSearchInput" placeholder="Filtrar usuários por nome, login ou cargo..." style="flex: 1; height: 22px; font-size: 11px; padding: 2px 6px;" autocomplete="off" />
+            </div>
+          </div>
+
+          
+          <div class="detail-users-list border-inset" id="detailUsersList" style="flex: 1; overflow-y: auto; background-color: var(--win-white); margin-top: 6px; min-height: 0; display: none;">
+            <table class="rsat-grid-table" id="detailUsersTable" style="width: 100%; border-collapse: collapse; font-size: 11px;">
+              <thead>
+                <tr style="background-color: var(--sage-titlebar); color: var(--win-white); border-bottom: 1.5px solid var(--sage-border); position: sticky; top: 0; z-index: 10;">
+                  <th style="padding: 4px 6px; font-weight: bold; font-size: 10px;">Nome de Exibição</th>
+                  <th style="padding: 4px 6px; font-weight: bold; font-size: 10px; width: 120px;">Conta (SAM)</th>
+                  <th style="padding: 4px 6px; font-weight: bold; font-size: 10px; width: 130px;">Departamento</th>
+                </tr>
+              </thead>
+              <tbody id="detailUsersTableBody">
+                
+              </tbody>
+            </table>
+            <div id="detailUsersEmpty" style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--win-gray); font-size: 11px; padding: 20px; text-align: center;">
+              Esta pasta não possui usuários carregados.
+            </div>
+          </div>
+
+          <div class="ou-manager border-outset" style="padding: 8px 10px; margin-top: 10px; flex-shrink: 0;">
+            <div class="ou-manager-title" style="font-size: 10px;">Criar nova OU</div>
+            <div class="add-ou-form">
+              <select id="addOuParent" class="ou-select" style="font-size: 11px; height: 22px; padding: 0 4px;"></select>
+              <div class="add-ou-row" style="margin-top: 4px; display: flex; gap: 6px;">
+                <input type="text" id="addOuName" placeholder="Nome da nova OU (ex: TI)" style="font-size: 11px; height: 22px;" />
+                <button type="button" class="btn-add-ou btn-sm" id="btnAddOu" style="font-size: 11px; height: 22px; padding: 0 10px;">Adicionar</button>
+              </div>
+            </div>
+            <div class="ou-list" id="ouList" style="display:none"></div>
+            <button type="button" class="btn-reset-tree" id="btnResetTree" style="margin-top: 6px; width: 100%; font-size: 10px; height: 22px;">
+              Restaurar estrutura padrão
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <div class="modal-footer-row">
+          <div class="selected-path-preview" id="selectedPathPreview">Nenhuma OU selecionada — será usada a OU padrão</div>
+          <div class="modal-footer-actions">
+            <button type="button" class="btn-modal-cancel" id="cancelOuModal">Cancelar</button>
+            <button type="button" class="btn-modal-confirm" id="confirmOuModal">Confirmar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-backdrop" id="docModal" style="display:none">
+    <div class="modal border-outset help-window">
+      <div class="modal-header window-titlebar">
+        <div class="modal-title">
+          
+          <svg class="pixel-icon" viewBox="0 0 16 16" width="16" height="16" style="margin-right:6px">
+            <rect x="3" y="1" width="10" height="14" fill="#ffffff" stroke="#1a1a1a" stroke-width="1.5" />
+            <rect x="5" y="4" width="6" height="1" fill="#1a1a1a" />
+            <rect x="5" y="7" width="6" height="1" fill="#1a1a1a" />
+            <rect x="5" y="10" width="4" height="1" fill="#1a1a1a" />
+          </svg>
+          Ajuda do AD User Creator — ISO27001.hlp
+        </div>
+        <button class="modal-close win-btn win-close" id="closeDocModal" title="Fechar"></button>
+      </div>
+      <div class="modal-body border-inset help-body">
+        <h1>Documentação Técnica e de Segurança</h1>
+        <p><strong>Classificação:</strong> Uso Interno | <strong>Conformidade:</strong> ISO/IEC 27001</p>
+        <hr/>
+        <h3>1. Visão Geral do Sistema</h3>
+        <p>O AD User Creator automatiza o provisionamento e desabilitação de identidades e acessos (IAM) de forma segura. O sistema opera 100% local (Air-gapped) e não armazena credenciais em banco de dados.</p>
+        
+        <h3>3. Segurança no Desenvolvimento (DevSecOps)</h3>
+        <p>O código-fonte incorpora práticas rígidas para impedir ataques cibernéticos comuns:</p>
+        <ul>
+          <li><strong>Command Injection:</strong> Entradas de formulário e CSV são sanitizadas rigorosamente via <code>escapePS()</code>, envelopando dados em strings literais seguras para o PowerShell.</li>
+          <li><strong>Cross-Site Scripting (XSS):</strong> Toda exibição de dados vindos do AD passa por <code>escapeHTML()</code> para evitar injeção de scripts maliciosos no browser.</li>
+          <li><strong>CSRF e Proteção de Rede:</strong> O micro-serviço (Server.ps1) executa exclusivamente no endereço de loopback <code>127.0.0.1</code> e valida tokens de requisições de origem única (CORS), bloqueando chamadas externas da internet.</li>
+        </ul>
+        
+        <h3>4. Trilhas de Auditoria (Event Logging)</h3>
+        <p>Toda criação ou desabilitação de contas gera logs de segurança oficiais nos Controladores de Domínio (Domain Controllers) associados ao SID do analista logado:</p>
+        <ul>
+          <li><strong>Event ID 4720:</strong> Registro de criação de conta de usuário.</li>
+          <li><strong>Event IDs 4728/4732:</strong> Alteração de membros de grupos de segurança (rastreabilidade de acessos espelhados).</li>
+        </ul>
+      </div>
+      <div class="modal-footer" style="justify-content:flex-end;">
+        <button type="button" class="btn-modal-cancel" id="confirmDocModalBtn">Fechar Ajuda</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="modal-backdrop" id="aboutModal" style="display:none">
+    <div class="modal border-outset about-window">
+      <div class="modal-header window-titlebar">
+        <div class="modal-title">Sobre o AD User Creator</div>
+        <button class="modal-close win-btn win-close" id="closeAboutModal" title="Fechar"></button>
+      </div>
+      <div class="modal-body about-body">
+        <div class="about-header">
+          <svg viewBox="0 0 48 48" width="48" height="48" style="margin-right:12px; flex-shrink:0;">
+            <rect x="8" y="8" width="32" height="32" fill="#000080" stroke="#1a1a1a" stroke-width="2" />
+            <rect x="10" y="10" width="28" height="28" fill="#c0c0c0" />
+            <rect x="12" y="12" width="24" height="24" fill="#000080" />
+            <text x="14" y="32" font-size="20" font-family="'VT323', monospace" fill="#ffffff" font-weight="bold">AD</text>
+          </svg>
+          <div>
+            <h2 style="font-family:'VT323', monospace; font-size:24px;">AD User Creator</h2>
+            <p style="font-size:12px;">Versão 2.0 (Retro OS Edition)</p>
+          </div>
+        </div>
+        <hr/>
+        <div class="about-content">
+          <p>Desenvolvido para automatizar o onboarding e a gestão de colaboradores no Active Directory de forma ágil, segura e padronizada.</p>
+          <p style="margin-top:10px;"><strong>AD User Creator © 2026</strong></p>
+          <p>Identity & Access Management (IAM)</p>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content:center;">
+        <button type="button" class="btn-modal-cancel" id="confirmAboutBtn" style="min-width: 80px;">OK</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div class="shutdown-screen" id="shutdownScreen" style="display:none">
+    <div class="shutdown-content">
+      <div class="shutdown-text">Seu computador já pode ser desligado com segurança.</div>
+      <div class="shutdown-sub">Ou clique no botão abaixo para reinicializar o AD_USER_CREATOR.EXE</div>
+      <div class="shutdown-btn-power">
+        <svg class="task-icon" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="#ff5555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;" onclick="window._rebootSystem()">
+          <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+          <line x1="12" y1="2" x2="12" y2="12"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+
+
+  
+  <div class="os-taskbar">
+    
+    
+    <div class="start-btn-wrap">
+      <button class="start-btn" id="startBtn">
+        
+        <svg class="task-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <rect x="3" y="3" width="8" height="8" rx="1.5"/>
+          <rect x="13" y="3" width="8" height="8" rx="1.5"/>
+          <rect x="3" y="13" width="8" height="8" rx="1.5"/>
+          <rect x="13" y="13" width="8" height="8" rx="1.5"/>
+        </svg>
+        <span>Iniciar</span>
+      </button>
+      
+      
+      <div class="start-menu border-outset" id="startMenu" style="display:none;">
+        <div class="start-menu-sidebar">
+          <div class="sidebar-text">AD CREATOR</div>
+        </div>
+        <div class="start-menu-items">
+          <div class="start-item" id="startItemCreate">
+            <svg class="task-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <line x1="19" y1="8" x2="19" y2="14"/>
+              <line x1="16" y1="11" x2="22" y2="11"/>
+            </svg>
+            Criar Usuário
+          </div>
+          <div class="start-item" id="startItemDisable">
+            
+            <svg class="task-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <line x1="17" y1="11" x2="23" y2="17"/>
+              <line x1="23" y1="11" x2="17" y2="17"/>
+            </svg>
+            Desabilitar Usuário
+          </div>
+          <div class="start-item" id="startItemLocked">
+            
+            <svg class="task-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              <circle cx="12" cy="16" r="1" fill="currentColor" stroke="none"/>
+            </svg>
+            Bloqueados
+          </div>
+          <div class="start-item" id="startItemComputers">
+            <svg class="task-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+            Computadores
+          </div>
+          <div class="start-divider"></div>
+          <div class="start-item" id="startItemHelp">
+            
+            <svg class="pixel-icon" viewBox="0 0 16 16" width="16" height="16">
+              <rect x="3" y="1" width="10" height="14" fill="#ffffff" stroke="#1a1a1a" stroke-width="1.5" />
+              <rect x="7" y="4" width="2" height="2" fill="#0000aa" />
+              <rect x="6" y="7" width="4" height="4" fill="#0000aa" />
+              <rect x="7" y="12" width="2" height="2" fill="#0000aa" />
+            </svg>
+            Ajuda & Segurança (ISO)
+          </div>
+          <div class="start-item" id="startItemAbout">
+            
+            <svg class="task-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            Sobre o Sistema
+          </div>
+          <div class="start-divider"></div>
+          <div class="start-item" id="startItemShutdown" style="color: #aa0000; font-weight: bold;">
+            
+            <svg class="task-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#aa0000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+              <line x1="12" y1="2" x2="12" y2="12"/>
+            </svg>
+            Desligar...
+          </div>
+        </div>
+      </div>
+    </div>
+
+    
+    <div class="taskbar-apps" role="tablist">
+      <button class="task-app-btn active" id="tabBtnCreate" role="tab" aria-selected="true" aria-controls="panelCreate">
+        
+        <svg class="task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <line x1="19" y1="8" x2="19" y2="14"/>
+          <line x1="16" y1="11" x2="22" y2="11"/>
+        </svg>
+        <span>Criar Usuário</span>
+      </button>
+      <button class="task-app-btn" id="tabBtnDisable" role="tab" aria-selected="false" aria-controls="panelDisable">
+        
+        <svg class="task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <line x1="17" y1="11" x2="23" y2="17"/>
+          <line x1="23" y1="11" x2="17" y2="17"/>
+        </svg>
+        <span>Desabilitar Usuário</span>
+      </button>
+      <button class="task-app-btn" id="tabBtnLocked" role="tab" aria-selected="false" aria-controls="panelLocked">
+        
+        <svg class="task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          <circle cx="12" cy="16" r="1" fill="currentColor" stroke="none"/>
+        </svg>
+        <span>Bloqueados</span>
+        <span class="locked-tab-badge" id="lockedTabBadge" style="display:none">0</span>
+      </button>
+      <button class="task-app-btn" id="tabBtnM365" role="tab" aria-selected="false" aria-controls="panelM365">
+        
+        <svg class="task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 10h-.08A7 7 0 0 0 4.75 12.02A6 6 0 0 0 6 24h12a6 6 0 0 0 0-12z"/>
+        </svg>
+        <span>Ativar M365</span>
+      </button>
+      <button class="task-app-btn" id="tabBtnComputers" role="tab" aria-selected="false" aria-controls="panelComputers">
+        
+        <svg class="task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <line x1="8" y1="21" x2="16" y2="21"/>
+          <line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+        <span>Computadores</span>
+      </button>
+    </div>
+
+    
+    <div class="taskbar-tray border-inset">
+      <div class="tray-icon" id="trayServerStatus" title="Servidor Local: Conectando...">
+        
+        <svg class="task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <line x1="8" y1="21" x2="16" y2="21"/>
+          <line x1="12" y1="17" x2="12" y2="21"/>
+          <circle cx="18" cy="7" r="2" id="trayServerDot" fill="#aa0000" stroke="none"/>
+        </svg>
+      </div>
+      <div class="tray-icon" id="trayAdStatus" title="Active Directory: Desconectado">
+        
+        <svg class="task-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+      </div>
+      <div class="tray-divider"></div>
+      <div class="tray-clock" id="trayClock">00:00:00</div>
+      <button class="tray-power-btn" id="trayPowerBtn" title="Desligar Terminal">
+        <svg class="pixel-icon" viewBox="0 0 16 16" width="12" height="12">
+          <circle cx="8" cy="8" r="5" fill="none" stroke="#aa0000" stroke-width="2" />
+          <rect x="7" y="2" width="2" height="6" fill="#aa0000" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  
+  <script src="config.js"></script>
+  
+  <script src="ad-data.js" onerror="window.AD_DATA=null"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>

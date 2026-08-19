@@ -1,0 +1,9 @@
+Olá equipe. Gostaria de apresentar a nossa nova ferramenta interna de automação, o AD User Creator.
+
+Historicamente, a criação de contas no Active Directory e o onboarding de novos colaboradores demandam tempo e uma atenção redobrada aos padrões de segurança e governança da nossa empresa. Para modernizar e agilizar esse fluxo, desenvolvemos uma solução visual que nos permite gerenciar a criação de contas no nosso AD diretamente do navegador, de forma muito mais fluida.
+
+A ferramenta entrega uma interface inteligente capaz de gerar automaticamente os padrões corporativos de nome de usuário e e-mail. Para a gestão de permissões, adotamos um modelo de acessos facilitado onde podemos visualizar a hierarquia da empresa, selecionar um colaborador já existente em uma árvore visual do AD, e copiar todos os seus acessos de forma espelhada para o novo funcionário. Além disso, o sistema suporta processamento em lote para admissões massivas através da simples importação de relatórios diretos do RH.
+
+Colocamos a segurança em primeiro lugar durante todo o desenvolvimento. A ferramenta foi submetida a uma revisão técnica de DevSecOps, operando em uma infraestrutura totalmente local e blindada contra injeções de código malicioso. O grande diferencial é que ela atua com rigorosa obediência aos privilégios já existentes no Windows, automatizando o nosso trabalho sem abrir nenhuma brecha adicional de segurança e mantendo intacta a nossa trilha nativa de auditoria.
+
+Com a implantação dessa automação, a equipe de TI deixa de gastar energia valiosa com tarefas burocráticas repetitivas e elimina a chance de erros humanos operacionais em digitações ou esquecimentos de grupos. Isso garante que os novos colaboradores da empresa tenham seus acessos e permissões prontos, totalmente padronizados e seguros muito antes do seu primeiro dia de trabalho.

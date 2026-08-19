@@ -1,0 +1,8 @@
+{
+  "serverPort"    : 7510,
+  "dominioEmail"  : "empresa.com.br",
+  "ouPadrao"      : "",
+  "logDirectory"  : "logs",
+  "abrirNavegador": true,
+  "reportsDirectory": "historico"
+}

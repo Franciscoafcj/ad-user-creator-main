@@ -1,0 +1,11 @@
+# Arquivos de Dados Locais - NÃO COMITAR!
+ad-data.js
+
+# Arquivos de log/temp
+*.log
+*.tmp
+
+# Planejamento e documentação local
+walkthrough.md
+implementation_plan.md
+PROMPT_IMPLEMENTACAO.md

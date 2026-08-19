@@ -1,0 +1,6058 @@
+
+
+
+
+
+function escapeHTML(str) {
+  if (!str && str !== 0) return '';
+  return String(str).replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
+}
+
+
+function escapePS(str) {
+  if (!str && str !== 0) return '';
+  return String(str).replace(/'/g, "''");
+}
+
+
+function normalizeStr(str) {
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')   // remove diacríticos
+    .replace(/[^a-zA-Z0-9.\-_]/g, '') // mantém apenas caracteres válidos
+    .toLowerCase();
+}
+
+
+function parseFullName(fullName) {
+  const particles = new Set(['de','da','do','dos','das','e','di','del','van','von','der','du','le','la','los','las']);
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { first: '', last: '', surnames: '' };
+  if (parts.length === 1) return { first: parts[0], last: '', surnames: '' };
+
+  // Primeiro nome: primeira palavra (sempre)
+  const first = parts[0];
+
+  // Sobrenomes completos: tudo a partir do segundo token
+  const surnames = parts.slice(1).join(' ');
+
+  // Último sobrenome não-partícula: usado para compor login/email (primeiro.ultimo)
+  let last = '';
+  for (let i = parts.length - 1; i >= 1; i--) {
+    if (!particles.has(parts[i].toLowerCase())) {
+      last = parts[i];
+      break;
+    }
+  }
+  if (!last) last = parts[parts.length - 1];
+
+  return { first, last, surnames };
+}
+
+
+function stripCPF(cpf) {
+  return cpf.replace(/\D/g, '');
+}
+
+
+function normalizeCPF(raw) {
+  const digits = stripCPF(raw);
+  if (digits.length > 11) return null;
+  return digits.padStart(11, '0');
+}
+
+
+function maskCPF(value) {
+  const d = value.replace(/\D/g, '').slice(0, 11);
+  return d
+    .replace(/^(\d{3})/, '$1.')
+    .replace(/^(\d{3})\.(\d{3})/, '$1.$2.')
+    .replace(/\.(\d{3})\.(\d{3})/, '.$1.$2-')
+    .replace(/-(\d{2}).*/, '-$1');
+}
+
+
+function validateCPF(cpf11) {
+  if (!cpf11 || cpf11.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(cpf11)) return false; // sequência de dígitos iguais
+  let sum = 0, rest;
+  for (let i = 1; i <= 9; i++) sum += parseInt(cpf11[i - 1]) * (11 - i);
+  rest = (sum * 10) % 11;
+  if (rest === 10 || rest === 11) rest = 0;
+  if (rest !== parseInt(cpf11[9])) return false;
+  sum = 0;
+  for (let i = 1; i <= 10; i++) sum += parseInt(cpf11[i - 1]) * (12 - i);
+  rest = (sum * 10) % 11;
+  if (rest === 10 || rest === 11) rest = 0;
+  return rest === parseInt(cpf11[10]);
+}
+
+
+function passwordStrength(pw) {
+  let score = 0;
+  if (pw.length >= 8) score++;
+  if (pw.length >= 12) score++;
+  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
+  if (/\d/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  return Math.min(score, 4);
+}
+
+
+function showToast(msg, color = '#10b981') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = color;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+
+function copyText(text) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => showToast('Copiado! ✓'));
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('Copiado! ✓');
+  }
+}
+
+
+function downloadPS1(content, filename) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+
+
+
+function highlight(code) {
+  const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  return escaped
+    // comentários
+    .replace(/(#.+?)(\n|$)/g, '<span class="cmt">$1</span>$2')
+    // strings duplas
+    .replace(/"([^"]*)"/g, '<span class="str">"$1"</span>')
+    // strings simples
+    .replace(/'([^']*)'/g, '<span class="str">\'$1\'</span>')
+    // variáveis
+    .replace(/(\$\w+)/g, '<span class="var">$1</span>')
+    // funções/cmdlets comuns
+    .replace(/\b(New-ADUser|Set-ADUser|Import-Module|Write-Host|Write-Error|ForEach-Object|ConvertTo-SecureString)\b/g, '<span class="fn">$1</span>')
+    // palavras-chave
+    .replace(/\b(if|else|foreach|while|try|catch|return|param|function|\-and|\-or|\-not)\b/g, '<span class="kw">$1</span>')
+    // parâmetros (traço + Nome)
+    .replace(/(-[A-Z][a-zA-Z]+)/g, '<span class="num">$1</span>');
+}
+
+
+
+
+function generateScript(u) {
+  const {
+    firstName, lastName, fullName: fullNameRaw, email, sam, cpf11,
+    ou, domain, password,
+    mustChange, enabled, templateUser,
+    surnames,
+  } = u;
+
+  // Nome completo digitado (ex: "Francisco de Assis Floriano Correa Junior")
+  const displayName = fullNameRaw || `${firstName} ${lastName}`;
+
+  // $LastName = sobrenomes completos; fallback para lastName (última palavra) se não tiver
+  const lastNameField = surnames || lastName;
+
+  const dcParts  = domain.split('.').map(p => `DC=${p}`).join(',');
+  const ouLine   = ou
+    ? `"${ou}"`
+    : `"OU=Usuarios,${dcParts}"`;
+
+  const lines = [
+    `# ================================================================`,
+    `# Script de Criação de Usuário no Active Directory`,
+    `# Gerado em: ${new Date().toLocaleString('pt-BR')}`,
+    `# Usuário: ${displayName}`,
+    ...(templateUser ? [`# Modelo  : ${templateUser}`] : []),
+    `# ================================================================`,
+    ``,
+    `# Importa o módulo do Active Directory`,
+    `# -WarningAction SilentlyContinue suprime avisos inofensivos de TypeData (PS 5.1)`,
+    `Import-Module ActiveDirectory -ErrorAction Stop -WarningAction SilentlyContinue`,
+    `Import-Module Microsoft.PowerShell.Security -ErrorAction SilentlyContinue`,
+    ``,
+    `# ── Dados do Usuário ────────────────────────────────────────────`,
+    `$FirstName    = '${escapePS(firstName)}'`,
+    `$LastName     = '${escapePS(lastNameField)}'`,
+    `$FullName     = '${escapePS(displayName)}'`,
+    `$SamAccount   = '${escapePS(sam)}'`,
+    `$UPN          = '${escapePS(email)}'`,
+    `$Email        = '${escapePS(email)}'`,
+    `$CPF          = '${escapePS(cpf11)}'         # CPF sem pontuação, 11 dígitos`,
+    `$OU           = ${ou ? `'${escapePS(ou)}'` : `'OU=Usuarios,${dcParts}'`}`,
+    `$Password     = ConvertTo-SecureString '${escapePS(password)}' -AsPlainText -Force`,
+    ``,
+    `# ── Verificar conflitos antes de criar ──────────────────────────`,
+    `$samExiste = Get-ADUser -Filter "SamAccountName -eq '$SamAccount'" -ErrorAction SilentlyContinue`,
+    `$upnExiste = Get-ADUser -Filter "UserPrincipalName -eq '$UPN'" -ErrorAction SilentlyContinue`,
+    ``,
+    `if ($samExiste) {`,
+    `    Write-Error "❌ O login '$SamAccount' já existe no AD. Altere o nome ou escolha outro login."`,
+    `    exit 1`,
+    `}`,
+    `if ($upnExiste) {`,
+    `    Write-Error "❌ O UPN '$UPN' já existe na floresta. Use um domínio ou sufixo diferente."`,
+    `    exit 1`,
+    `}`,
+    ``,
+    `# ── Criar Usuário ───────────────────────────────────────────────`,
+    `try {`,
+    `    $userParams = @{`,
+    `        Name                  = $FullName`,
+    `        GivenName             = $FirstName`,
+    `        Surname               = $LastName`,
+    `        SamAccountName        = $SamAccount`,
+    `        UserPrincipalName     = $UPN`,
+    `        EmailAddress          = $Email`,
+    `        Description           = $CPF`,
+    `        Path                  = $OU`,
+    `        AccountPassword       = $Password`,
+    `        Enabled               = $${enabled ? 'true' : 'false'}`,
+    `        ChangePasswordAtLogon = $${mustChange ? 'true' : 'false'}`,
+    `    }`,
+    `    New-ADUser @userParams`,
+    ``,
+    `    Write-Host "✅ Usuário '$FullName' criado com sucesso!" -ForegroundColor Green`,
+    `    Write-Host "   Login   : $SamAccount"`,
+    `    Write-Host "   E-mail  : $Email"`,
+    `    Write-Host "   CPF (AD): $CPF"`,
+    ``,
+    `} catch {`,
+    `    Write-Error "❌ Falha ao criar o usuário '$FullName': $_"`,
+    `    exit 1`,
+    `}`,
+  ];
+
+  // ── Bloco de cópia de departamento e grupos (se modelo informado) 
+  if (templateUser && templateUser.trim()) {
+    lines.push(
+      ``,
+      `# ── Copiar Departamento e Grupos do Usuário Modelo ──────────────`,
+      `# Modelo: ${templateUser}`,
+      `$Modelo = '${escapePS(templateUser)}'`,
+      ``,
+      `try {`,
+      `    $ModeloObj = Get-ADUser -Identity $Modelo -Properties Department`,
+      `    if ($ModeloObj.Department) {`,
+      `        Set-ADUser -Identity $SamAccount -Department $ModeloObj.Department`,
+      `        Write-Host "   🏢 Departamento copiado: $($ModeloObj.Department)" -ForegroundColor Cyan`,
+      `    }`,
+      ``,
+      `    $Grupos = Get-ADPrincipalGroupMembership -Identity $ModeloObj |`,
+      `                Where-Object { $_.Name -ne 'Domain Users' }`,
+      ``,
+      `    if ($Grupos.Count -eq 0) {`,
+      `        Write-Host "ℹ️  Nenhum grupo adicional encontrado para '$Modelo'." -ForegroundColor Yellow`,
+      `    } else {`,
+      `        Write-Host "" `,
+      `        Write-Host "🔗 Copiando $($Grupos.Count) grupo(s) de '$Modelo'..." -ForegroundColor Cyan`,
+      `        foreach ($grupo in $Grupos) {`,
+      `            try {`,
+      `                Add-ADGroupMember -Identity $grupo.DistinguishedName -Members $SamAccount -ErrorAction Stop`,
+      `                Write-Host "   ✅ $($grupo.Name)" -ForegroundColor Green`,
+      `            } catch {`,
+      `                Write-Warning "   ⚠  Falha no grupo '$($grupo.Name)': $_"`,
+      `            }`,
+      `        }`,
+      `        Write-Host "" `,
+      `        Write-Host "✅ Grupos copiados com sucesso!" -ForegroundColor Green`,
+      `    }`,
+      `} catch {`,
+      `    Write-Warning "Não foi possível obter grupos de '$Modelo': $_"`,
+      `}`
+    );
+  }
+
+  return lines.join('\n');
+}
+
+
+function generateBulkScript(users, domain, templateUser) {
+  const dcParts = domain.split('.').map(p => `DC=${p}`).join(',');
+  const defaultOU = `'OU=Usuarios,${dcParts}'`;
+
+  const header = [
+    `# ================================================================`,
+    `# Script de Criação de Usuários em LOTE no Active Directory`,
+    `# Gerado em: ${new Date().toLocaleString('pt-BR')}`,
+    `# Total de usuários: ${users.length}`,
+    `# ================================================================`,
+    ``,
+    `# -WarningAction SilentlyContinue suprime avisos inofensivos de TypeData (PS 5.1)`,
+    `Import-Module ActiveDirectory -ErrorAction Stop -WarningAction SilentlyContinue`,
+    `Import-Module Microsoft.PowerShell.Security -ErrorAction SilentlyContinue`,
+    ``,
+    `$usuarios = @(`,
+  ];
+
+  const userLines = users.map((u, i) => {
+    const comma = i < users.length - 1 ? ',' : '';
+    const lastNameField = u.surnames || u.lastName;
+    const fullNameField = u.fullName || `${u.firstName} ${lastNameField}`;
+    return [
+      `    @{`,
+      `        FirstName   = '${escapePS(u.firstName)}'`,
+      `        LastName    = '${escapePS(lastNameField)}'`,
+      `        FullName    = '${escapePS(fullNameField)}'`,
+      `        Sam         = '${escapePS(u.sam)}'`,
+      `        Email       = '${escapePS(u.email)}'`,
+      `        CPF         = '${escapePS(u.cpf11)}'`,
+      `        OU          = ${u.ou ? `'${escapePS(u.ou)}'` : defaultOU}`,
+      `        Password    = '${escapePS(u.password)}'`,
+      `    }${comma}`,
+    ].join('\n');
+  });
+
+  // Bloco de cópia de grupos para lote (se modelo informado)
+  const templateBlock = templateUser && templateUser.trim() ? [
+    ``,
+    `        # ── Copiar departamento e grupos do modelo ───────────────────`,
+    `        try {`,
+    `            $ModeloObj = Get-ADUser -Identity '${escapePS(templateUser)}' -Properties Department`,
+    `            if ($ModeloObj.Department) {`,
+    `                Set-ADUser -Identity $u.Sam -Department $ModeloObj.Department`,
+    `                Write-Host "   🏢 Departamento copiado: $($ModeloObj.Department)" -ForegroundColor Cyan`,
+    `            }`,
+    ``,
+    `            $Grupos = Get-ADPrincipalGroupMembership -Identity $ModeloObj |`,
+    `                        Where-Object { $_.Name -ne 'Domain Users' }`,
+    `            foreach ($grupo in $Grupos) {`,
+    `                try { Add-ADGroupMember -Identity $grupo.DistinguishedName -Members $u.Sam -ErrorAction Stop }`,
+    `                catch { Write-Warning "Grupo '$($grupo.Name)': $_" }`,
+    `            }`,
+    `            Write-Host "   🔗 $($Grupos.Count) grupo(s) copiado(s) de '${templateUser}'." -ForegroundColor Cyan`,
+    `        } catch {`,
+    `            Write-Warning "Grupos de '${templateUser}': $_"`,
+    `        }`,
+  ] : [];
+
+  const footer = [
+    `)`,
+    ``,
+    `foreach ($u in $usuarios) {`,
+    `    # Verificar conflitos antes de criar cada usuário`,
+    `    $samExiste = Get-ADUser -Filter "SamAccountName -eq '$($u.Sam)'" -ErrorAction SilentlyContinue`,
+    `    $upnExiste = Get-ADUser -Filter "UserPrincipalName -eq '$($u.Email)'" -ErrorAction SilentlyContinue`,
+    `    if ($samExiste) { Write-Warning "⚠ Login '$($u.Sam)' já existe — pulando."; continue }`,
+    `    if ($upnExiste) { Write-Warning "⚠ UPN '$($u.Email)' já existe na floresta — pulando."; continue }`,
+    ``,
+    `    try {`,
+    `        $SecPw   = ConvertTo-SecureString $u.Password -AsPlainText -Force`,
+    `        $OUFINAL = if ($u.OU) { $u.OU } else { ${defaultOU} }`,
+    ``,
+    `        New-ADUser \``,
+    `            -Name              $u.FullName \``,
+    `            -GivenName         $u.FirstName \``,
+    `            -Surname           $u.LastName \``,
+    `            -SamAccountName    $u.Sam \``,
+    `            -UserPrincipalName $u.Email \``,
+    `            -EmailAddress      $u.Email \``,
+    `            -Description       $u.CPF \``,
+    `            -Path              $OUFINAL \``,
+    `            -AccountPassword   $SecPw \``,
+    `            -Enabled           $true \``,
+    `            -ChangePasswordAtLogon $true`,
+    ``,
+    `        Write-Host "✅ $($u.FullName) criado." -ForegroundColor Green`,
+    ...templateBlock,
+    `    } catch {`,
+    `        Write-Error "❌ Falha em $($u.FullName): $_"`,
+    `    }`,
+    `}`,
+  ];
+
+  return [...header, ...userLines, ...footer].join('\n');
+}
+
+
+
+
+const cpfInput      = document.getElementById('cpf');
+const cpfFormatted  = document.getElementById('cpfFormatted');
+const cpfStatus     = document.getElementById('cpfStatus');
+const cpfError      = document.getElementById('cpfError');
+
+cpfInput.addEventListener('input', function () {
+  this.value = maskCPF(this.value);
+  updateCPFPreview(this.value);
+});
+
+function updateCPFPreview(raw) {
+  const digits = stripCPF(raw);
+  if (!digits) {
+    cpfFormatted.textContent = '';
+    cpfStatus.textContent = '';
+    cpfInput.className = '';
+    cpfError.textContent = '';
+    return;
+  }
+  const normalized = normalizeCPF(raw);
+  if (!normalized) {
+    cpfFormatted.textContent = '';
+    cpfStatus.textContent = '✗';
+    cpfStatus.style.color = 'var(--danger)';
+    cpfInput.className = 'is-invalid';
+    cpfError.textContent = 'CPF inválido (máx. 11 dígitos).';
+    return;
+  }
+  const isValid = validateCPF(normalized);
+  cpfFormatted.textContent = isValid
+    ? `Campo Descrição AD: ${normalized}  ← 11 dígitos sem pontuação`
+    : `Campo Descrição AD: ${normalized}  (dígitos verificadores incorretos)`;
+  cpfStatus.textContent = isValid ? '✓' : '⚠';
+  cpfStatus.style.color = isValid ? 'var(--success)' : 'var(--warning)';
+  cpfInput.className    = isValid ? 'is-valid' : 'is-invalid';
+  cpfError.textContent  = isValid ? '' : 'CPF inválido (verificadores não conferem), mas será aceito.';
+}
+
+
+
+const fullNameInput  = document.getElementById('fullName');
+const firstNameInput = document.getElementById('firstName');
+const lastNameInput  = document.getElementById('lastName');
+const emailPreview   = document.getElementById('emailPreview');
+const samPreview     = document.getElementById('samPreview');
+const domainInput    = document.getElementById('domain');
+
+
+function formatName(value) {
+  const particles = new Set([
+    'de','da','do','dos','das','e','di','del',
+    'van','von','der','du','le','la','los','las',
+  ]);
+
+  return value
+    .split(' ')
+    .map((word, index) => {
+      if (!word) return word; // preserva espaços múltiplos enquanto digita
+      const lower = word.toLowerCase();
+      // Primeira palavra sempre capitalizada; partículas ficam minúsculas
+      if (index > 0 && particles.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(' ');
+}
+
+
+function samExists(sam) {
+  if (!window.AD_DATA || !window.AD_DATA.users) return false;
+  const s = sam.toLowerCase();
+  return window.AD_DATA.users.some(u =>
+    (u.samAccountName || '').toLowerCase() === s
+  );
+}
+
+
+function suggestAlternativeSams(fullName) {
+  const particles = new Set([
+    'de','da','do','dos','das','e','di','del',
+    'van','von','der','du','le','la','los','las',
+  ]);
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return [];
+
+  const fn = normalizeStr(parts[0]);
+  if (!fn) return [];
+
+  // Todos os tokens não-partícula exceto o primeiro nome
+  const surnames = parts.slice(1).filter(w => !particles.has(w.toLowerCase()));
+
+  const candidates = [];
+
+  // 1. Cada sobrenome não-partícula como alternativa (exceto o último já usado)
+  for (let i = surnames.length - 2; i >= 0; i--) {
+    const alt = normalizeStr(surnames[i]);
+    if (alt) candidates.push(`${fn}.${alt}`);
+  }
+
+  // 2. primeiro.inicial_do_meio.ultimo  (ex: paulo.d.santos)
+  const lastSurname = normalizeStr(surnames[surnames.length - 1] || '');
+  for (let i = 0; i < surnames.length - 1; i++) {
+    const mid = normalizeStr(surnames[i]);
+    if (mid && lastSurname) candidates.push(`${fn}.${mid.charAt(0)}.${lastSurname}`);
+  }
+
+  // 3. Sufixo numérico
+  if (lastSurname) {
+    for (let n = 2; n <= 5; n++) candidates.push(`${fn}.${lastSurname}${n}`);
+  }
+
+  // Remove duplicatas
+  return [...new Set(candidates)].filter(Boolean);
+}
+
+function updateEmailAndSam() {
+  const fullName = fullNameInput.value.trim();
+  const domain   = domainInput.value.trim() || 'empresa.com.br';
+  const { first, last } = parseFullName(fullName);
+  const fn = normalizeStr(first);
+  const ln = normalizeStr(last);
+
+  // Atualiza campos ocultos usados no gerador de script
+  firstNameInput.value = first;
+  lastNameInput.value  = last;
+
+  if (fn && ln) {
+    emailPreview.value = `${fn}.${ln}@${domain}`;
+    samPreview.value   = `${fn}.${ln}`;
+  } else if (fn) {
+    emailPreview.value = `${fn}@${domain}`;
+    samPreview.value   = fn;
+  } else {
+    emailPreview.value = '';
+    samPreview.value   = '';
+  }
+
+  // Verifica conflito no AD
+  checkSamConflict(fullName, domain);
+}
+
+let samCheckTimer = null;
+
+function checkSamConflict(fullName, domain) {
+  const conflictEl  = document.getElementById('samConflict');
+  const conflictMsg = document.getElementById('samConflictMsg');
+  const altsEl      = document.getElementById('samAlternatives');
+  if (!conflictEl) return;
+
+  const currentSam = samPreview.value;
+  if (!currentSam) {
+    conflictEl.style.display = 'none';
+    samPreview.classList.remove('is-invalid');
+    return;
+  }
+
+  clearTimeout(samCheckTimer);
+  samCheckTimer = setTimeout(() => {
+    if (!samExists(currentSam)) {
+      conflictEl.style.display = 'none';
+      samPreview.classList.remove('is-invalid');
+      return;
+    }
+
+    // Conflito detectado
+    samPreview.classList.add('is-invalid');
+    conflictEl.style.display = 'block';
+
+    // Gera alternativas que ainda não estão em uso
+    const alts = suggestAlternativeSams(fullName).filter(a => !samExists(a));
+
+    altsEl.innerHTML = '';
+
+    if (!alts.length) {
+      conflictMsg.textContent = 'Login já existe no AD — informe um nome diferente.';
+      return;
+    }
+
+    conflictMsg.textContent = 'Login já existe no AD — clique em uma alternativa:';
+
+    alts.slice(0, 6).forEach(alt => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'sam-alt-btn';
+      btn.textContent = alt;
+      btn.title = `Usar: ${alt}@${domain}`;
+      btn.addEventListener('click', () => {
+        samPreview.value   = alt;
+        emailPreview.value = `${alt}@${domain}`;
+        samPreview.classList.remove('is-invalid');
+        samPreview.classList.add('is-valid');
+        conflictEl.style.display = 'none';
+      });
+      altsEl.appendChild(btn);
+    });
+  }, 300);
+}
+
+let passwordManuallyEdited = false;
+
+function generatePasswordFromName(fullName) {
+  if (!fullName) return '';
+  const { first } = parseFullName(fullName);
+  if (!first) return '';
+
+  const cleanName = first.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z]/g, '');
+
+  if (!cleanName) return '';
+
+  const slice = cleanName.slice(0, 4);
+  const formattedName = slice.charAt(0).toUpperCase() + slice.slice(1).toLowerCase();
+
+  const digits = Array.from(crypto.getRandomValues(new Uint8Array(4)))
+    .map(b => b % 10)
+    .join('');
+
+  return `${formattedName}@${digits}`;
+}
+
+const passwordInput = document.getElementById('password');
+const pwBar         = document.getElementById('pwBar');
+const pwHint        = document.getElementById('pwHint');
+const generatePw    = document.getElementById('generatePw');
+
+function updatePasswordStrength() {
+  const s = passwordStrength(passwordInput.value);
+  const colors = ['#ef4444', '#f59e0b', '#f59e0b', '#10b981', '#10b981'];
+  const labels = ['Muito fraca', 'Fraca', 'Média', 'Forte', 'Muito forte'];
+  pwBar.style.width      = `${s * 25}%`;
+  pwBar.style.background = colors[s];
+  pwHint.textContent     = s ? labels[s] : 'Mínimo 8 caracteres';
+  pwHint.style.color     = colors[s];
+}
+
+fullNameInput.addEventListener('input', function () {
+  // Guarda posição do cursor antes de reformatar
+  const start = this.selectionStart;
+  const end   = this.selectionEnd;
+  const prev  = this.value;
+
+  const formatted = formatName(this.value);
+
+  if (formatted !== prev) {
+    this.value = formatted;
+    // Restaura posição do cursor (pode variar ±0 pois só muda case)
+    this.setSelectionRange(start, end);
+  }
+
+  updateEmailAndSam();
+
+  if (!passwordManuallyEdited) {
+    const generated = generatePasswordFromName(this.value.trim());
+    if (generated) {
+      passwordInput.value = generated;
+      updatePasswordStrength();
+    }
+  }
+});
+
+domainInput.addEventListener('input', updateEmailAndSam);
+
+
+
+
+passwordInput.addEventListener('input', function () {
+  passwordManuallyEdited = true;
+  updatePasswordStrength();
+});
+
+generatePw.addEventListener('click', function () {
+  const fullName = fullNameInput.value.trim();
+  const newPw = generatePasswordFromName(fullName) || (() => {
+    const digits = Array.from(crypto.getRandomValues(new Uint8Array(4)))
+      .map(b => b % 10)
+      .join('');
+    return `User@${digits}`;
+  })();
+  passwordInput.value = newPw;
+  passwordManuallyEdited = false;
+  updatePasswordStrength();
+  showToast('Senha gerada com sucesso!', '#10b981');
+});
+
+
+
+const togglePw  = document.getElementById('togglePw');
+const eyeOpen   = document.getElementById('eyeOpen');
+const eyeClosed = document.getElementById('eyeClosed');
+
+togglePw.addEventListener('click', function () {
+  const show = passwordInput.type === 'password';
+  passwordInput.type = show ? 'text' : 'password';
+  eyeOpen.style.display   = show ? 'none'  : 'block';
+  eyeClosed.style.display = show ? 'block' : 'none';
+});
+
+
+
+document.querySelectorAll('.copy-btn').forEach(btn => {
+  btn.addEventListener('click', function () {
+    const target = document.getElementById(this.dataset.target);
+    if (target && target.value) copyText(target.value);
+  });
+});
+
+
+
+const userForm   = document.getElementById('userForm');
+const scriptCode = document.getElementById('scriptCode');
+const scriptOut  = document.getElementById('scriptOutput');
+const emptyState = document.getElementById('emptyState');
+const outputActions = document.getElementById('outputActions');
+const summaryEl  = document.getElementById('summary');
+const summaryGrid= document.getElementById('summaryGrid');
+
+userForm.addEventListener('submit', function (e) {
+  e.preventDefault();
+
+  const successInfoPanel = document.getElementById('successInfoPanel');
+  if (successInfoPanel) successInfoPanel.style.display = 'none';
+
+  const fullName  = fullNameInput.value.trim();
+  const cpfRaw    = cpfInput.value.trim();
+  const password  = passwordInput.value;
+  const domain    = domainInput.value.trim() || 'empresa.com.br';
+
+  let valid = true;
+
+  // Validate Nome Completo
+  const fnErr = document.getElementById('fullNameError');
+  if (!fullName) {
+    fnErr.textContent = 'Obrigatório.'; fullNameInput.className = 'is-invalid'; valid = false;
+  } else if (parseFullName(fullName).last === '') {
+    fnErr.textContent = 'Informe ao menos nome e sobrenome.'; fullNameInput.className = 'is-invalid'; valid = false;
+  } else {
+    fnErr.textContent = ''; fullNameInput.className = 'is-valid';
+  }
+
+  // Validate CPF
+  const cpf11 = normalizeCPF(cpfRaw);
+  if (!cpfRaw) {
+    cpfError.textContent = 'Obrigatório.'; cpfInput.className = 'is-invalid'; valid = false;
+  } else if (!cpf11) {
+    cpfError.textContent = 'CPF inválido.'; cpfInput.className = 'is-invalid'; valid = false;
+  }
+
+  // Validação de senha removida a pedido do usuário
+
+  if (!valid) return;
+
+  const { first, last, surnames } = parseFullName(fullName);
+  const fn    = normalizeStr(first);
+  const ln    = normalizeStr(last);
+
+  // Usa o SAM/email que está nos campos de preview — pode ser uma alternativa
+  // escolhida pelo usuário. Só recalcula se estiver vazio.
+  const sam   = samPreview.value.trim()   || (ln ? `${fn}.${ln}` : fn);
+  const email = emailPreview.value.trim() || `${sam}@${domain}`;
+
+  const userData = {
+    firstName  : first,
+    lastName   : last,
+    surnames,
+    fullName,
+    email, sam, cpf11,
+    ou           : document.getElementById('ou').value.trim(),
+    domain,
+    password,
+    mustChange   : document.getElementById('mustChange').checked,
+    enabled      : document.getElementById('enabled').checked,
+    templateUser : document.getElementById('templateUser').value.trim(),
+  };
+
+
+  const script = generateScript(userData);
+  scriptCode.innerHTML = highlight(script);
+  scriptOut.style.display  = 'block';
+  emptyState.style.display = 'none';
+  outputActions.style.display = 'flex';
+
+  // Summary
+  summaryGrid.innerHTML = [
+    { k: 'Nome Completo',       v: fullName },
+    { k: 'Login (SAM)',         v: sam },
+    { k: 'E-mail',              v: email },
+    { k: 'CPF (Descrição AD)',  v: cpf11 },
+    { k: 'OU Selecionada',      v: userData.ou || '— (padrão do domínio)' },
+    ...(userData.templateUser ? [{ k: 'Usuário Modelo', v: userData.templateUser }] : []),
+  ].map(i => `
+    <div class="summary-item">
+      <div class="s-key">${i.k}</div>
+      <div class="s-val">${i.v}</div>
+    </div>
+  `).join('');
+  summaryEl.style.display = 'block';
+
+  // Salva script para botões copiar/baixar
+  document.getElementById('copyScriptBtn')._script  = script;
+  document.getElementById('downloadBtn')._script    = script;
+  document.getElementById('downloadBtn')._filename  = `criar_${sam}.ps1`;
+  // Armazena dados estruturados (JSON) para o botão Executar usar a API diretamente
+  document.getElementById('executeBtn')._userData   = userData;
+
+  showToast('Script gerado com sucesso! ✓');
+});
+
+document.getElementById('copyScriptBtn').addEventListener('click', function () {
+  if (this._script) copyText(this._script);
+});
+document.getElementById('downloadBtn').addEventListener('click', function () {
+  if (this._script) downloadPS1(this._script, this._filename || 'criar_usuario_ad.ps1');
+});
+
+
+
+
+function parseSmartImportText(text) {
+  const records = [];
+
+  // Divide por separadores (linhas de underscores, hifens, asteriscos, ou múltiplas linhas em branco)
+  const blocks = text.split(/(?:_{3,}|-{3,}|\*{3,}|={3,}|\n\s*\n\s*\n)/g);
+
+  blocks.forEach(block => {
+    const nameMatch = block.match(/^[ \t]*Nome\s*:\s*(.+)/im);
+    const cpfMatch  = block.match(/^[ \t]*CPF\s*:\s*(.+)/im);
+
+    const name = nameMatch ? nameMatch[1].trim() : '';
+    const cpf  = cpfMatch  ? cpfMatch[1].trim()  : '';
+
+    // Capitaliza o nome (que pode vir em MAIÚSCULAS)
+    const nameFmt = formatName(name);
+
+    if (nameFmt) {
+      records.push({ name: nameFmt, cpf });
+    }
+  });
+
+  return records;
+}
+
+
+function generateSmartPassword() {
+  // 4 dígitos criptograficamente aleatórios
+  const digits = Array.from(crypto.getRandomValues(new Uint8Array(4)))
+    .map(b => b % 10)
+    .join('');
+
+  return `Senh@${digits}`;
+}
+
+/* ── Toggle do painel ── */
+document.getElementById('smartImportToggle').addEventListener('click', function () {
+  const body  = document.getElementById('smartImportBody');
+  const caret = document.getElementById('smartImportCaret');
+  const open  = body.style.display !== 'none';
+  body.style.display  = open ? 'none'  : 'block';
+  caret.style.transform = open ? '' : 'rotate(180deg)';
+  this.classList.toggle('smart-import-toggle-open', !open);
+});
+
+/* ── Converter ── */
+document.getElementById('smartImportConvertBtn').addEventListener('click', function () {
+  const raw      = document.getElementById('smartImportInput').value.trim();
+  const resultEl = document.getElementById('smartImportResult');
+  const msgEl    = document.getElementById('smartImportResultMsg');
+  const badge    = document.getElementById('smartImportBadge');
+
+  if (!raw) { showToast('Cole o texto antes de converter.', '#f59e0b'); return; }
+
+  const records = parseSmartImportText(raw);
+  if (!records.length) {
+    showToast('Nenhum "Nome:" encontrado no texto.', '#ef4444');
+    return;
+  }
+
+  // Monta CSV lines: NomeCompleto,CPF,SenhaIndividual
+  const csvLines = records.map(r => {
+    const cpfClean = r.cpf.replace(/\D/g, '');
+    const { first } = parseFullName(r.name);
+    const password  = generateSmartPassword();
+    return `${r.name},${cpfClean || '00000000000'},${password}`;
+  });
+
+  const csvInput = document.getElementById('csvInput');
+  // Acrescenta ao CSV existente (ou substitui se estava vazio)
+  const existing = csvInput.value.trim();
+  csvInput.value = existing ? existing + '\n' + csvLines.join('\n') : csvLines.join('\n');
+
+  // Badge
+  badge.textContent = records.length;
+  badge.style.display = 'inline-flex';
+
+  // Resultado
+  const missing = records.filter(r => !r.cpf).length;
+  resultEl.style.display = 'flex';
+  resultEl.className = 'smart-import-result smart-import-result-ok';
+  msgEl.textContent = `${records.length} usuário(s) convertido(s) — senhas individuais geradas (ex: ${csvLines[0].split(',')[2]})` +
+    (missing ? ` — ⚠ ${missing} sem CPF` : '') + '.';
+
+  showToast(`${records.length} registro(s) convertido(s)! ✓`);
+});
+
+
+
+function parseCsvLine(line) {
+  return line.split(',').map(s => s.trim());
+}
+
+
+function resolveOuFromInput(text) {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (window.AD_DATA && window.AD_DATA.ous && window.AD_DATA.ous.length) {
+    const resolved = resolveOuByName(trimmed);
+    if (resolved) return resolved;
+  }
+  if (trimmed.includes('=')) return trimmed;
+  return null;
+}
+
+
+function parseBulkUsers(rawCsv, domain, globalOU) {
+  const lines = rawCsv.split('\n').filter(l => l.trim());
+  const firstLine = lines[0].toLowerCase();
+  const hasHeader = firstLine.includes('nome') || firstLine.includes('first') || firstLine.includes('cpf');
+  const dataLines = hasHeader ? lines.slice(1) : lines;
+
+  const ouResolved = resolveOuFromInput(globalOU) || '';
+
+  // Primeiro passe: gera SAMs primários
+  const users = dataLines.map(line => {
+    const [fullNameCsv = '', cpfRaw = '', password = 'Mudar@2025'] = parseCsvLine(line);
+    const { first, last, surnames } = parseFullName(fullNameCsv.trim());
+    if (!first || !last) return null;
+    const fn    = normalizeStr(first);
+    const ln    = normalizeStr(last);
+    const cpf11 = normalizeCPF(cpfRaw) || '00000000000';
+    const sam   = ln ? `${fn}.${ln}` : fn;
+    return { firstName: first, lastName: last, surnames, fullName: fullNameCsv.trim(),
+             sam, email: `${sam}@${domain}`, cpf11, ou: ouResolved, password,
+             conflict: false, conflictReason: '', alternatives: [] };
+  }).filter(Boolean);
+
+  // Rastreia SAMs já usados (AD + linhas anteriores do CSV)
+  const usedSams = new Set();
+
+  users.forEach(u => {
+    const samLower = u.sam.toLowerCase();
+    const inAd  = samExists(u.sam);
+    const inCsv = usedSams.has(samLower);
+
+    if (inAd || inCsv) {
+      u.conflict = true;
+      u.conflictReason = inAd ? 'Já existe no AD' : 'Duplicado no CSV';
+
+      // Gera alternativas livres (nem no AD, nem já usadas no CSV)
+      const alts = suggestAlternativeSams(u.fullName)
+        .filter(a => !samExists(a) && !usedSams.has(a.toLowerCase()));
+
+      // Tenta auto-resolver com a primeira alternativa disponível
+      if (alts.length) {
+        u.sam     = alts[0];
+        u.email   = `${alts[0]}@${domain}`;
+        u.alternatives = alts.slice(1, 6);   // demais para o usuário escolher
+        usedSams.add(alts[0].toLowerCase());
+      } else {
+        u.alternatives = [];
+        usedSams.add(samLower); // mantém o original com conflito marcado
+        return;
+      }
+    } else {
+      usedSams.add(samLower);
+    }
+  });
+
+  return users;
+}
+
+/* ── Fase 1: Analisar CSV → mostrar tabela de preview ── */
+let _bulkParsedUsers = [];
+
+document.getElementById('bulkParseBtn').addEventListener('click', function () {
+  const raw = document.getElementById('csvInput').value.trim();
+  if (!raw) { showToast('Cole o CSV antes de analisar.', '#f59e0b'); return; }
+
+  const domain   = domainInput.value.trim() || 'empresa.com.br';
+  const globalOU = document.getElementById('bulkOuSelect').value;
+
+  const users = parseBulkUsers(raw, domain, globalOU);
+  if (!users.length) { showToast('Nenhum usuário válido encontrado.', '#ef4444'); return; }
+
+  _bulkParsedUsers = users;
+
+  // ── Renderiza tabela de preview ──
+  const tbody    = document.getElementById('bulkPreviewBody');
+  const statsEl  = document.getElementById('bulkPreviewStats');
+  const noteEl   = document.getElementById('bulkPreviewNote');
+  tbody.innerHTML = '';
+
+  const conflictCount = users.filter(u => u.conflict).length;
+
+  users.forEach((u, i) => {
+    const tr = document.createElement('tr');
+    tr.dataset.idx = i;
+    if (u.conflict) tr.classList.add('bulk-row-conflict');
+
+    // Coluna #
+    const tdNum = document.createElement('td');
+    tdNum.textContent = i + 1;
+    tr.appendChild(tdNum);
+
+    // Nome completo
+    const tdName = document.createElement('td');
+    tdName.textContent = u.fullName;
+    tr.appendChild(tdName);
+
+    // SAM (editável via alternativas)
+    const tdSam = document.createElement('td');
+    const samWrap = document.createElement('div');
+    samWrap.className = 'bulk-sam-cell';
+
+    const samSpan = document.createElement('span');
+    samSpan.className = 'bulk-sam-value' + (u.conflict ? ' bulk-sam-auto' : '');
+    samSpan.textContent = u.sam;
+    samSpan.id = `bulk-sam-${i}`;
+    samWrap.appendChild(samSpan);
+
+    // Botões de alternativas adicionais (caso queira trocar)
+    if (u.conflict && u.alternatives.length) {
+      const altsWrap = document.createElement('div');
+      altsWrap.className = 'bulk-sam-alts';
+      u.alternatives.forEach(alt => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'sam-alt-btn sam-alt-btn-sm';
+        btn.textContent = alt;
+        btn.title = `Usar: ${alt}@${domain}`;
+        btn.addEventListener('click', () => {
+          _bulkParsedUsers[i].sam   = alt;
+          _bulkParsedUsers[i].email = `${alt}@${domain}`;
+          samSpan.textContent = alt;
+          samSpan.className = 'bulk-sam-value bulk-sam-chosen';
+          altsWrap.querySelectorAll('.sam-alt-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          tr.classList.remove('bulk-row-conflict');
+          tr.classList.add('bulk-row-resolved');
+          updatePreviewStats();
+        });
+        altsWrap.appendChild(btn);
+      });
+      samWrap.appendChild(altsWrap);
+    }
+
+    tdSam.appendChild(samWrap);
+    tr.appendChild(tdSam);
+
+    // Email
+    const tdEmail = document.createElement('td');
+    tdEmail.className = 'bulk-email-cell';
+    tdEmail.textContent = u.email;
+    tdEmail.id = `bulk-email-${i}`;
+    tr.appendChild(tdEmail);
+
+    // Status
+    const tdStatus = document.createElement('td');
+    if (u.conflict) {
+      tdStatus.innerHTML = `<span class="bulk-status-badge bulk-status-conflict">⚡ ${u.conflictReason} — Auto-corrigido</span>`;
+    } else {
+      tdStatus.innerHTML = `<span class="bulk-status-badge bulk-status-ok">✓ OK</span>`;
+    }
+    tr.appendChild(tdStatus);
+
+    tbody.appendChild(tr);
+  });
+
+  // Stats
+  function updatePreviewStats() {
+    const remaining = document.querySelectorAll('#bulkPreviewBody tr.bulk-row-conflict').length;
+    statsEl.innerHTML = `
+      <span class="bulk-stat bulk-stat-total">${users.length} usuário(s)</span>
+      ${conflictCount ? `<span class="bulk-stat bulk-stat-warn">⚡ ${conflictCount} conflito(s) detectado(s)</span>` : ''}
+      ${remaining ? `<span class="bulk-stat bulk-stat-warn">${remaining} ainda com conflito</span>` : ''}
+    `;
+    noteEl.textContent = conflictCount
+      ? 'Logins conflitantes foram auto-corrigidos. Você pode escolher uma alternativa diferente clicando nos botões abaixo de cada login.'
+      : 'Nenhum conflito detectado. Revise os dados e confirme para gerar o script.';
+  }
+  updatePreviewStats();
+
+  // Mostra a área de preview e colapsa o bulk-left
+  document.getElementById('bulkPreviewArea').style.display = 'block';
+  document.getElementById('bulkPreviewArea').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  showToast(`${users.length} usuário(s) analisado(s)${conflictCount ? ` — ${conflictCount} conflito(s) auto-corrigido(s)` : ''}! ✓`);
+});
+
+/* ── Cancelar preview ── */
+document.getElementById('bulkCancelPreviewBtn').addEventListener('click', function () {
+  document.getElementById('bulkPreviewArea').style.display = 'none';
+  _bulkParsedUsers = [];
+});
+
+/* ── Fase 2: Confirmar e Gerar Script ── */
+document.getElementById('bulkBtn').addEventListener('click', function () {
+  if (!_bulkParsedUsers.length) { showToast('Analise o CSV primeiro.', '#f59e0b'); return; }
+
+  const domain = domainInput.value.trim() || 'empresa.com.br';
+  const unresolved = document.querySelectorAll('#bulkPreviewBody tr.bulk-row-conflict').length;
+  if (unresolved) {
+    showToast(`⚠ ${unresolved} usuário(s) ainda com conflito não resolvido — revise antes de gerar.`, '#f59e0b');
+    return;
+  }
+
+  const templateUserBulk = document.getElementById('templateUserBulk').value.trim();
+  const script = generateBulkScript(_bulkParsedUsers, domain, templateUserBulk);
+
+  const bulkCode    = document.getElementById('bulkCode');
+  const bulkOutput  = document.getElementById('bulkOutput');
+  const bulkEmpty   = document.getElementById('bulkEmptyState');
+  const bulkActions = document.getElementById('bulkOutputActions');
+
+  bulkCode.innerHTML = highlight(script);
+  bulkOutput.style.display  = 'block';
+  bulkEmpty.style.display   = 'none';
+  bulkActions.style.display = 'flex';
+
+  document.getElementById('copyBulkBtn')._script       = script;
+  document.getElementById('downloadBulkBtn')._script   = script;
+  document.getElementById('downloadBulkBtn')._filename = 'criar_usuarios_lote.ps1';
+
+  // Oculta preview após gerar
+  document.getElementById('bulkPreviewArea').style.display = 'none';
+
+  showToast(`Script gerado para ${_bulkParsedUsers.length} usuário(s)! ✓`);
+});
+
+document.getElementById('copyBulkBtn').addEventListener('click', function () {
+  if (this._script) copyText(this._script);
+});
+document.getElementById('downloadBulkBtn').addEventListener('click', function () {
+  if (this._script) downloadPS1(this._script, this._filename || 'criar_usuarios_lote.ps1');
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   OU TREE PICKER
+   - Estrutura padrão baseada no domínio informado
+   - OUs customizadas salvas em localStorage
+   - Expandir / colapsar / pesquisar / selecionar
+   - Adicionar e remover OUs manualmente
+═══════════════════════════════════════════════════════════════ */
+
+const DEFAULT_OU_TREE = [
+  {
+    id: 'usuarios', name: 'Usuarios', icon: '👥', children: [
+      { id: 'ti',          name: 'TI',             icon: '💻', children: [] },
+      { id: 'rh',          name: 'RH',             icon: '👔', children: [] },
+      { id: 'financeiro',  name: 'Financeiro',     icon: '💰', children: [] },
+      { id: 'comercial',   name: 'Comercial',      icon: '📊', children: [] },
+      { id: 'operacional', name: 'Operacional',    icon: '⚙️', children: [] },
+      { id: 'diretoria',   name: 'Diretoria',      icon: '🏢', children: [] },
+    ]
+  },
+  {
+    id: 'computadores', name: 'Computadores', icon: '🖥️', children: [
+      { id: 'servidores',  name: 'Servidores',     icon: '🗄️', children: [] },
+      { id: 'estacoes',    name: 'Estacoes',       icon: '💻', children: [] },
+    ]
+  },
+  { id: 'grupos',    name: 'Grupos',           icon: '🗂️', children: [] },
+  { id: 'servicos',  name: 'ContasDeServico',  icon: '⚙️', children: [] },
+];
+
+const LS_KEY = 'ou_tree_custom';
+
+function getTree() {
+  try {
+    const saved = localStorage.getItem(LS_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (_) {}
+  return JSON.parse(JSON.stringify(DEFAULT_OU_TREE));
+}
+
+function saveTree(tree) {
+  localStorage.setItem(LS_KEY, JSON.stringify(tree));
+}
+
+function buildDN(trail, domain) {
+  const d = (domain || domainInput.value.trim() || 'empresa.com.br');
+  const domainSuffix = d.split('.').map(p => `DC=${p}`).join(',');
+  const ouParts = [...trail].reverse().map(n => `OU=${n}`);
+  return [...ouParts, domainSuffix].join(',');
+}
+
+let ouTree       = getTree();
+let selectedNode = null;
+let pendingNode  = null;
+let expandedIds  = new Set(['__root__', 'usuarios']);
+
+const ouModal           = document.getElementById('ouModal');
+const openOuPickerBtn   = document.getElementById('openOuPicker');
+const closeOuModalBtn   = document.getElementById('closeOuModal');
+const cancelOuModalBtn  = document.getElementById('cancelOuModal');
+const confirmOuModalBtn = document.getElementById('confirmOuModal');
+const adTreeEl          = document.getElementById('adTree');
+const treeSearchEl      = document.getElementById('treeSearch');
+const detailIconEl      = document.getElementById('detailIcon');
+const detailNameEl      = document.getElementById('detailName');
+const detailDnEl        = document.getElementById('detailDn');
+const selectedPathEl    = document.getElementById('selectedPathPreview');
+const addOuParentSel    = document.getElementById('addOuParent');
+const addOuNameEl       = document.getElementById('addOuName');
+const btnAddOu          = document.getElementById('btnAddOu');
+const btnResetTree      = document.getElementById('btnResetTree');
+const ouListEl          = document.getElementById('ouList');
+const ouHiddenInput     = document.getElementById('ou');
+const ouPickerLabel     = document.getElementById('ouPickerLabel');
+const ouBreadcrumb      = document.getElementById('ouBreadcrumb');
+
+openOuPickerBtn.addEventListener('click', () => {
+  pendingNode = selectedNode;
+  ouTree = getTree();
+  treeSearchEl.value = '';
+  renderTree();
+  renderParentSelect();
+  renderOuList();
+  updateDetailPanel(pendingNode);
+  ouModal.style.display = 'flex';
+  setTimeout(() => treeSearchEl.focus(), 80);
+});
+
+// Usuário que foi clicado na árvore para ser usado como modelo
+let _pendingTemplateUser = null;
+
+function closeModal() {
+  ouModal.style.display = 'none';
+  _pendingTemplateUser = null; // descarta se o modal for fechado sem confirmar
+}
+closeOuModalBtn.addEventListener('click',  closeModal);
+cancelOuModalBtn.addEventListener('click', closeModal);
+ouModal.addEventListener('click', e => { if (e.target === ouModal) closeModal(); });
+
+confirmOuModalBtn.addEventListener('click', () => {
+  selectedNode = pendingNode;
+  applySelection();
+  // Se um usuário foi escolhido na árvore como modelo, aplica agora
+  if (_pendingTemplateUser && window._applyTemplateUser) {
+    window._applyTemplateUser(_pendingTemplateUser);
+  }
+  _pendingTemplateUser = null;
+  closeModal();
+});
+
+function applySelection() {
+  if (!selectedNode) {
+    ouHiddenInput.value = '';
+    ouPickerLabel.textContent = 'Clique para escolher a pasta no AD...';
+    openOuPickerBtn.classList.remove('has-value');
+    ouBreadcrumb.style.display = 'none';
+    return;
+  }
+  ouHiddenInput.value       = selectedNode.dn;
+  ouPickerLabel.textContent = selectedNode.dn;
+  openOuPickerBtn.classList.add('has-value');
+
+  const domain = domainInput.value.trim() || 'empresa.com.br';
+  const parts  = [domain, ...selectedNode.trail];
+  ouBreadcrumb.innerHTML = parts.map((p, i, arr) => {
+    const isLast = i === arr.length - 1;
+    return `<span class="bc-part">${p}</span>` +
+           (isLast ? '' : '<span class="bc-sep"> › </span>');
+  }).join('');
+  ouBreadcrumb.style.display = 'flex';
+}
+
+/* ──── Renderização da árvore ──── */
+function renderTree(filter) {
+  filter = filter || '';
+  adTreeEl.innerHTML = '';
+  const domain = domainInput.value.trim() || 'empresa.com.br';
+
+  // Nó raiz
+  const { wrapper: rootWrapper } = createNodeRow({
+    id: '__root__', name: domain, icon: '🏛️',
+    trail: [], dn: null, isRoot: true,
+    hasChildren: ouTree.length > 0, filter
+  });
+  adTreeEl.appendChild(rootWrapper);
+
+  if (expandedIds.has('__root__')) {
+    const childrenWrap = document.createElement('div');
+    childrenWrap.className = 'tree-children';
+    ouTree.forEach(node => renderNode(node, [], childrenWrap, filter, domain, false));
+    adTreeEl.appendChild(childrenWrap);
+  }
+}
+
+function renderNode(node, parentTrail, container, filter, domain, parentMatched) {
+  const trail = [...parentTrail, node.name];
+  const dn    = node.exactDn || buildDN(trail, domain);
+  const hasOuChildren = !!(node.children && node.children.length);
+  const hasChildren = hasOuChildren; // Apenas sub-OUs na árvore, como no RSAT!
+
+  const matchesSelf = !filter || node.name.toLowerCase().includes(filter.toLowerCase());
+  const childrenHit = hasOuChildren && nodeOrChildMatches(node, filter);
+
+  // Oculta se: há filtro E nem este nó nem nenhum filho corresponde E o pai não correspondeu
+  if (filter && !matchesSelf && !childrenHit && !parentMatched) return;
+
+  // Se este nó corresponde, seus filhos são exibidos independentemente do filtro
+  const thisMatched = parentMatched || matchesSelf;
+
+  const { wrapper } = createNodeRow({
+    id: node.id, name: node.name, icon: node.icon || '📁',
+    trail, dn, isRoot: false, hasChildren, filter,
+    hasExactDn: !!node.exactDn,
+  });
+  container.appendChild(wrapper);
+
+  if (hasChildren && expandedIds.has(node.id)) {
+    const childrenWrap = document.createElement('div');
+    childrenWrap.className = 'tree-children';
+
+    // Sub-OUs
+    if (hasOuChildren) {
+      node.children.forEach(child =>
+        renderNode(child, trail, childrenWrap, filter, domain, thisMatched)
+      );
+    }
+
+    // Depois: usuários dentro desta OU (só quando há dados com campo 'ou')
+    const usersInOu = getUsersInOU(dn);
+    const hasUsers = usersInOu && usersInOu.length > 0;
+    if (hasUsers) {
+      const f = filter ? filter.toLowerCase() : '';
+      const filtered = filter
+        ? usersInOu.filter(u =>
+            thisMatched ||
+            (u.displayName    || '').toLowerCase().includes(f) ||
+            (u.samAccountName || '').toLowerCase().includes(f) ||
+            (u.department     || '').toLowerCase().includes(f)
+          )
+        : usersInOu;
+
+      if (filtered.length) {
+        const sep = document.createElement('div');
+        sep.className = 'tree-user-separator';
+        sep.textContent = `${filtered.length} usuário${filtered.length !== 1 ? 's' : ''}`;
+        childrenWrap.appendChild(sep);
+
+        filtered.forEach(u => {
+          childrenWrap.appendChild(createUserLeafRow(u, dn, filter));
+        });
+      }
+    }
+
+    wrapper.appendChild(childrenWrap);
+  }
+}
+
+
+function createUserLeafRow(u, ouDn, filter) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'tree-node';
+
+  const row = document.createElement('div');
+  row.className = 'tree-node-row tree-user-row';
+
+  // Avatar com iniciais
+  const avatar = document.createElement('span');
+  avatar.className = 'tree-user-avatar';
+  const nm = u.displayName || u.samAccountName || '?';
+  const parts = nm.trim().split(/\s+/);
+  avatar.textContent = parts.length > 1
+    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    : parts[0][0].toUpperCase();
+
+  // Nome + dept
+  const info = document.createElement('span');
+  info.className = 'tree-user-info';
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'tree-user-name';
+  const nameText = u.displayName || u.samAccountName;
+  if (filter) {
+    const esc = escapeRegex(filter);
+    const regex = new RegExp(`(${esc})`, 'gi');
+    const parts = nameText.split(regex);
+    nameEl.innerHTML = parts.map((part, idx) => 
+      idx % 2 === 1 ? `<mark>${escapeHTML(part)}</mark>` : escapeHTML(part)
+    ).join('');
+  } else {
+    nameEl.textContent = nameText;
+  }
+
+  const metaEl = document.createElement('span');
+  metaEl.className = 'tree-user-meta';
+  metaEl.textContent = [
+    u.samAccountName,
+    u.department || '',
+  ].filter(Boolean).join(' · ');
+
+  info.appendChild(nameEl);
+  info.appendChild(metaEl);
+
+  // Badge de grupos
+  const groupsArray = Array.isArray(u.groups) ? u.groups : (typeof u.groups === 'string' ? [u.groups] : []);
+  const groupCount = groupsArray.length;
+  const groupBadge = document.createElement('span');
+  groupBadge.className = 'tree-user-group-badge';
+  groupBadge.textContent = groupCount ? `${groupCount} grupo${groupCount !== 1 ? 's' : ''}` : '—';
+  groupBadge.title = groupCount ? `Grupos: ${groupsArray.join(', ')}` : 'Sem grupos de segurança';
+
+  // Indicador: usuário selecionado como modelo pendente
+  const isSelected = _pendingTemplateUser && _pendingTemplateUser.samAccountName === u.samAccountName;
+  if (isSelected) row.classList.add('tree-user-selected');
+
+  row.appendChild(avatar);
+  row.appendChild(info);
+  row.appendChild(groupBadge);
+  wrapper.appendChild(row);
+
+  row.addEventListener('click', (e) => {
+    e.stopPropagation();
+
+    // Seleciona a OU deste usuário como pendingNode
+    // Extrai o trail a partir do DN da OU
+    const ouParts = ouDn.split(',').filter(p => p.trim().toUpperCase().startsWith('OU=')).map(p => p.trim().slice(3)).reverse();
+    pendingNode = { name: ouParts[ouParts.length - 1] || ouDn, trail: ouParts, dn: ouDn };
+    updateDetailPanel(pendingNode);
+
+    // Marca o usuário como template pendente
+    _pendingTemplateUser = u;
+
+    // Atualiza a seleção visual: remove seleção anterior e re-renderiza
+    renderTree(treeSearchEl.value);
+  });
+
+  return wrapper;
+}
+
+function nodeOrChildMatches(node, filter) {
+  if (!filter) return true;
+  if (node.name.toLowerCase().includes(filter.toLowerCase())) return true;
+  return (node.children || []).some(c => nodeOrChildMatches(c, filter));
+}
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function createNodeRow({ id, name, icon, trail, dn, isRoot, hasChildren, filter, hasExactDn }) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'tree-node';
+
+  const row = document.createElement('div');
+  row.className = 'tree-node-row';
+  if (!isRoot && pendingNode && pendingNode.dn === dn) {
+    row.classList.add('selected');
+  }
+
+  const toggle = document.createElement('span');
+  toggle.className = 'tree-toggle' +
+    (hasChildren ? (expandedIds.has(id) ? ' open' : '') : ' empty');
+  toggle.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>`;
+
+  const iconEl = document.createElement('span');
+  iconEl.className = 'tree-icon';
+  const isOpen = expandedIds.has(id);
+  iconEl.textContent = (!isRoot && isOpen && icon === '📁') ? '📂' : icon;
+
+  const label = document.createElement('span');
+  label.className = 'tree-label' + (isRoot ? ' root-label' : '');
+  label.innerHTML = (filter && filter.trim())
+    ? name.replace(new RegExp(`(${escapeRegex(filter)})`, 'gi'), '<mark>$1</mark>')
+    : name;
+
+  // Indicador visual: ✓ verde = DN exato do AD | ◌ cinza = DN calculado
+  if (!isRoot) {
+    const dnBadge = document.createElement('span');
+    dnBadge.className = hasExactDn ? 'tree-dn-badge tree-dn-exact' : 'tree-dn-badge tree-dn-calc';
+    dnBadge.title = hasExactDn
+      ? `DN real do AD:\n${dn}`
+      : `DN calculado (OU não está na lista do AD):\n${dn}`;
+    dnBadge.textContent = hasExactDn ? '✓' : '◌';
+    row.appendChild(toggle);
+    row.appendChild(iconEl);
+    row.appendChild(label);
+    row.appendChild(dnBadge);
+  } else {
+    row.appendChild(toggle);
+    row.appendChild(iconEl);
+    row.appendChild(label);
+  }
+  wrapper.appendChild(row);
+
+  if (hasChildren) {
+    toggle.addEventListener('click', e => { e.stopPropagation(); toggleExpand(id); });
+  }
+
+  row.addEventListener('click', () => {
+    if (isRoot) { toggleExpand(id); return; }
+    pendingNode = { name, trail, dn };
+    updateDetailPanel(pendingNode);
+    if (hasChildren) toggleExpand(id);
+    else renderTree(treeSearchEl.value);
+  });
+
+  return { wrapper, row };
+}
+
+function toggleExpand(id) {
+  if (expandedIds.has(id)) expandedIds.delete(id);
+  else expandedIds.add(id);
+  renderTree(treeSearchEl.value);
+}
+
+
+let _usersByOuCache = null;
+let _usersByOuSource = null; // referência para detectar mudança
+
+function _buildUsersIndex() {
+  if (!window.AD_DATA || !Array.isArray(window.AD_DATA.users)) return {};
+  // Só constrói se pelo menos um usuário tiver o campo 'ou'
+  if (!window.AD_DATA.users.some(u => u && u.ou)) return {};
+  const map = {};
+  for (const u of window.AD_DATA.users) {
+    if (!u || !u.ou) continue;
+    const key = u.ou.toLowerCase();
+    if (!map[key]) map[key] = [];
+    map[key].push(u);
+  }
+  return map;
+}
+
+
+function getUsersInOU(dn) {
+  if (!dn || !window.AD_DATA) return [];
+  // Reconstrói o cache se AD_DATA mudou
+  if (_usersByOuSource !== window.AD_DATA.users) {
+    _usersByOuCache  = _buildUsersIndex();
+    _usersByOuSource = window.AD_DATA.users;
+  }
+  return _usersByOuCache[dn.toLowerCase()] || [];
+}
+
+let _currentOuUsers = [];
+
+function updateDetailPanel(node) {
+  if (!node) {
+    detailIconEl.textContent = '📁';
+    detailNameEl.textContent = 'Nenhuma pasta selecionada';
+    detailDnEl.textContent   = '—';
+    selectedPathEl.textContent = 'Nenhuma OU selecionada — será usada a OU padrão do domínio';
+    selectedPathEl.classList.remove('active');
+    
+    // Oculta área de busca e listagem de usuários
+    const searchBox = document.getElementById('detailUserSearchBox');
+    const usersList = document.getElementById('detailUsersList');
+    if (searchBox) searchBox.style.display = 'none';
+    if (usersList) usersList.style.display = 'none';
+    
+    _updateModalUserBanner(null);
+    return;
+  }
+  
+  detailIconEl.textContent = '📂';
+  detailNameEl.textContent = node.name;
+  detailDnEl.textContent   = node.dn;
+  selectedPathEl.textContent = node.dn;
+  selectedPathEl.classList.add('active');
+  
+  // Busca usuários desta OU
+  const users = getUsersInOU(node.dn);
+  _currentOuUsers = users;
+  
+  // Mostra área de busca e listagem de usuários
+  const searchBox = document.getElementById('detailUserSearchBox');
+  const usersList = document.getElementById('detailUsersList');
+  if (searchBox) searchBox.style.display = 'block';
+  if (usersList) usersList.style.display = 'block';
+  
+  // Reseta campo de busca interna da OU
+  const searchInput = document.getElementById('detailUserSearchInput');
+  if (searchInput) searchInput.value = '';
+  
+  // Renderiza a tabela de usuários
+  renderRsatUsersList(users);
+  
+  _updateModalUserBanner(_pendingTemplateUser);
+}
+
+function renderRsatUsersList(users, filterText) {
+  const tbody = document.getElementById('detailUsersTableBody');
+  const table = document.getElementById('detailUsersTable');
+  const emptyDiv = document.getElementById('detailUsersEmpty');
+  
+  if (!tbody || !table || !emptyDiv) return;
+  
+  tbody.innerHTML = '';
+  
+  const filter = (filterText || '').toLowerCase().trim();
+  const filtered = filter
+    ? users.filter(u => 
+        (u.displayName || '').toLowerCase().includes(filter) ||
+        (u.samAccountName || '').toLowerCase().includes(filter) ||
+        (u.department || '').toLowerCase().includes(filter) ||
+        (u.title || '').toLowerCase().includes(filter)
+      )
+    : users;
+    
+  if (filtered.length === 0) {
+    table.style.display = 'none';
+    emptyDiv.style.display = 'flex';
+    emptyDiv.textContent = filter 
+      ? 'Nenhum usuário corresponde ao filtro pesquisado.' 
+      : 'Esta pasta não possui usuários carregados.';
+    return;
+  }
+  
+  table.style.display = 'table';
+  emptyDiv.style.display = 'none';
+  
+  filtered.forEach(u => {
+    const tr = document.createElement('tr');
+    tr.className = 'rsat-user-tr';
+    if (_pendingTemplateUser && _pendingTemplateUser.samAccountName === u.samAccountName) {
+      tr.classList.add('rsat-selected-row');
+    }
+    
+    // Nome Completo
+    const tdName = document.createElement('td');
+    tdName.style.padding = '6px 8px';
+    tdName.style.display = 'flex';
+    tdName.style.alignItems = 'flex-start';
+    tdName.style.gap = '8px';
+    
+    const userIcon = document.createElement('span');
+    userIcon.textContent = '👤';
+    userIcon.style.fontSize = '12px';
+    userIcon.style.marginTop = '2px';
+    userIcon.style.flexShrink = '0';
+    
+    const textContainer = document.createElement('div');
+    textContainer.style.display = 'flex';
+    textContainer.style.flexDirection = 'column';
+    textContainer.style.gap = '3px';
+    textContainer.style.minWidth = '0';
+    
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = u.displayName || u.samAccountName;
+    nameSpan.style.fontWeight = 'bold';
+    nameSpan.style.fontSize = '11px';
+    nameSpan.style.lineHeight = '1.2';
+    
+    textContainer.appendChild(nameSpan);
+    
+    const groupsArray = Array.isArray(u.groups) ? u.groups : (typeof u.groups === 'string' ? [u.groups] : []);
+    if (groupsArray.length > 0) {
+      const groupsDiv = document.createElement('div');
+      groupsDiv.style.display = 'flex';
+      groupsDiv.style.flexWrap = 'nowrap';
+      groupsDiv.style.alignItems = 'center';
+      groupsDiv.style.gap = '3px';
+      
+      const maxVisible = 2;
+      const visibleGroups = groupsArray.slice(0, maxVisible);
+      
+      visibleGroups.forEach(group => {
+        const groupSpan = document.createElement('span');
+        groupSpan.className = 'rsat-group-badge';
+        groupSpan.textContent = group;
+        groupSpan.title = group; // Exibe o nome completo do grupo ao passar o mouse
+        groupsDiv.appendChild(groupSpan);
+      });
+      
+      if (groupsArray.length > maxVisible) {
+        const moreSpan = document.createElement('span');
+        moreSpan.className = 'rsat-group-badge rsat-group-more';
+        moreSpan.textContent = `+${groupsArray.length - maxVisible}`;
+        moreSpan.title = groupsArray.slice(maxVisible).join(', ');
+        groupsDiv.appendChild(moreSpan);
+      }
+      textContainer.appendChild(groupsDiv);
+    }
+    
+    tdName.appendChild(userIcon);
+    tdName.appendChild(textContainer);
+    
+    // SAM Account
+    const tdSam = document.createElement('td');
+    tdSam.style.padding = '5px 8px';
+    tdSam.style.fontFamily = 'var(--font-mono)';
+    tdSam.textContent = u.samAccountName;
+    
+    // Departamento
+    const tdDept = document.createElement('td');
+    tdDept.style.padding = '5px 8px';
+    tdDept.textContent = u.department || '—';
+    
+    tr.appendChild(tdName);
+    tr.appendChild(tdSam);
+    tr.appendChild(tdDept);
+    
+    tr.addEventListener('click', () => {
+      // Remove seleção anterior
+      tbody.querySelectorAll('.rsat-selected-row').forEach(row => {
+        row.classList.remove('rsat-selected-row');
+      });
+      tr.classList.add('rsat-selected-row');
+      
+      _pendingTemplateUser = u;
+      _updateModalUserBanner(u);
+    });
+    
+    tbody.appendChild(tr);
+  });
+}
+
+
+function _updateModalUserBanner(u) {
+  let banner = document.getElementById('_modalUserBanner');
+  if (!u) {
+    if (banner) banner.style.display = 'none';
+    return;
+  }
+  if (!banner) {
+    // Cria o banner na primeira vez e insere antes do selectedPathPreview
+    banner = document.createElement('div');
+    banner.id = '_modalUserBanner';
+    banner.className = 'modal-user-banner';
+    const footer = document.getElementById('selectedPathPreview')?.parentElement;
+    if (footer) footer.insertBefore(banner, footer.firstChild);
+  }
+  const groupsArray = Array.isArray(u.groups) ? u.groups : (typeof u.groups === 'string' ? [u.groups] : []);
+  const groups = groupsArray.length;
+  banner.innerHTML = `
+    <div class="modal-user-banner-avatar">${
+      (() => {
+        const nm = u.displayName || u.samAccountName || '?';
+        const p  = nm.trim().split(/\s+/);
+        return p.length > 1 ? (p[0][0]+p[p.length-1][0]).toUpperCase() : p[0][0].toUpperCase();
+      })()
+    }</div>
+    <div class="modal-user-banner-info">
+      <div class="modal-user-banner-name">${u.displayName || u.samAccountName}</div>
+      <div class="modal-user-banner-meta">${u.samAccountName}${u.department ? ' · '+u.department : ''}
+        <span class="modal-user-banner-groups">${groups} grupo${groups !== 1 ? 's' : ''} serão copiados</span>
+      </div>
+    </div>
+    <div class="modal-user-banner-label">Modelo</div>`;
+  banner.style.display = 'flex';
+}
+
+treeSearchEl.addEventListener('input', function () {
+  const term = this.value.trim();
+  if (term) {
+    // Expande TODOS os nós para que o filtro possa mostrar os resultados internos
+    expandedIds = new Set(['__root__']);
+    expandAll(ouTree);
+  } else {
+    // Sem filtro: volta ao estado padrão (só raiz e primeiros nós expandidos)
+    expandedIds = new Set(['__root__']);
+    ouTree.slice(0, 3).forEach(n => expandedIds.add(n.id));
+  }
+  renderTree(term);
+});
+
+const detailUserSearchInput = document.getElementById('detailUserSearchInput');
+if (detailUserSearchInput) {
+  detailUserSearchInput.addEventListener('input', function() {
+    renderRsatUsersList(_currentOuUsers, this.value);
+  });
+}
+
+function expandAll(nodes) {
+  nodes.forEach(n => {
+    expandedIds.add(n.id);
+    if (n.children && n.children.length) expandAll(n.children);
+  });
+}
+
+/* ──── Gerenciar OUs ──── */
+function renderParentSelect() {
+  addOuParentSel.innerHTML = '<option value="__root__">🏛️  Raiz do domínio</option>';
+  function addOptions(nodes, depth) {
+    nodes.forEach(n => {
+      const pad = '\u3000'.repeat(depth);
+      const opt = document.createElement('option');
+      opt.value = n.id;
+      opt.textContent = `${pad}${n.icon || '📁'} ${n.name}`;
+      addOuParentSel.appendChild(opt);
+      if (n.children && n.children.length) addOptions(n.children, depth + 1);
+    });
+  }
+  addOptions(ouTree, 0);
+}
+
+function renderOuList() {
+  ouListEl.innerHTML = '';
+  function listNodes(nodes, trail) {
+    nodes.forEach(n => {
+      const t = [...trail, n.name];
+      const item = document.createElement('div');
+      item.className = 'ou-list-item';
+      item.innerHTML = `
+        <span class="ou-list-item-icon">${n.icon || '📁'}</span>
+        <span class="ou-list-item-name">${n.name}</span>
+        <span class="ou-list-item-path">${t.slice(0, -1).join(' › ') || 'Raiz'}</span>
+        <button class="btn-del-ou" title="Remover OU">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        </button>`;
+      item.querySelector('.btn-del-ou').addEventListener('click', () => {
+        if (confirm(`Remover "${n.name}" e suas sub-pastas?`)) {
+          removeNode(ouTree, n.id);
+          saveTree(ouTree);
+          renderTree(treeSearchEl.value);
+          renderParentSelect();
+          renderOuList();
+        }
+      });
+      ouListEl.appendChild(item);
+      if (n.children && n.children.length) listNodes(n.children, t);
+    });
+  }
+  listNodes(ouTree, []);
+  if (!ouListEl.children.length) {
+    ouListEl.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">Estrutura padrão ativa</div>';
+  }
+}
+
+function removeNode(nodes, id) {
+  for (let i = 0; i < nodes.length; i++) {
+    if (nodes[i].id === id) { nodes.splice(i, 1); return true; }
+    if (nodes[i].children && removeNode(nodes[i].children, id)) return true;
+  }
+  return false;
+}
+
+function findNode(nodes, id) {
+  for (const n of nodes) {
+    if (n.id === id) return n;
+    const f = findNode(n.children || [], id);
+    if (f) return f;
+  }
+  return null;
+}
+
+btnAddOu.addEventListener('click', () => {
+  const name = addOuNameEl.value.trim();
+  if (!name) { showToast('Informe o nome da OU.', '#f59e0b'); return; }
+
+  const parentId = addOuParentSel.value;
+  const newNode  = { id: `ou_${Date.now()}`, name, icon: '📁', children: [] };
+
+  if (parentId === '__root__') {
+    ouTree.push(newNode);
+  } else {
+    const parent = findNode(ouTree, parentId);
+    if (!parent) { showToast('Pasta pai não encontrada.', '#ef4444'); return; }
+    parent.children.push(newNode);
+    expandedIds.add(parentId);
+  }
+
+  saveTree(ouTree);
+  addOuNameEl.value = '';
+  renderTree(treeSearchEl.value);
+  renderParentSelect();
+  renderOuList();
+  showToast(`OU "${name}" adicionada! ✓`);
+});
+
+addOuNameEl.addEventListener('keydown', e => { if (e.key === 'Enter') btnAddOu.click(); });
+
+btnResetTree.addEventListener('click', () => {
+  if (confirm('Isso apagará todas as OUs personalizadas. Continuar?')) {
+    localStorage.removeItem(LS_KEY);
+    ouTree = getTree();
+    expandedIds = new Set(['__root__', 'usuarios']);
+    pendingNode = null;
+    updateDetailPanel(null);
+    renderTree();
+    renderParentSelect();
+    renderOuList();
+    showToast('Estrutura restaurada ao padrão. ✓');
+  }
+});
+
+domainInput.addEventListener('input', () => {
+  if (ouModal.style.display !== 'none') renderTree(treeSearchEl.value);
+  if (selectedNode) {
+    selectedNode.dn = buildDN(selectedNode.trail, domainInput.value.trim() || 'empresa.com.br');
+    applySelection();
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   INTEGRAÇÃO COM AD (via window.AD_DATA gerado por Get-ADData.ps1)
+═══════════════════════════════════════════════════════════════ */
+
+
+
+const AD_DN_MAP   = {};  // chave = dn.toLowerCase()  → ouObj
+const AD_NAME_MAP = {};  // chave = name.toLowerCase() → [ouObj, ...] (pode haver nomes repetidos)
+
+
+function resolveOuByName(nameOrDn) {
+  if (!nameOrDn) return null;
+  const trimmed = nameOrDn.trim();
+
+  // 1. Já é um DN completo (contém '=')
+  if (trimmed.includes('=')) {
+    const key = trimmed.toLowerCase();
+    if (AD_DN_MAP[key]) return AD_DN_MAP[key].distinguishedName;
+    // Mesmo que não esteja no mapa, retorna como está (confiamos no usuário)
+    return trimmed;
+  }
+
+  // 2. Busca por nome exato (case-insensitive) — se houver um único resultado
+  const key = trimmed.toLowerCase();
+  const matches = AD_NAME_MAP[key];
+  if (matches && matches.length === 1) return matches[0].distinguishedName;
+  if (matches && matches.length > 1) {
+    // Retorna o primeiro (menor DN = mais alto na hierarquia)
+    return matches.sort((a, b) =>
+      a.distinguishedName.length - b.distinguishedName.length
+    )[0].distinguishedName;
+  }
+
+  // 3. Busca parcial por nome (contém)
+  const partial = Object.values(AD_NAME_MAP)
+    .flat()
+    .filter(o => o.name.toLowerCase().includes(key));
+  if (partial.length === 1) return partial[0].distinguishedName;
+  if (partial.length > 1) {
+    return partial.sort((a, b) =>
+      a.distinguishedName.length - b.distinguishedName.length
+    )[0].distinguishedName;
+  }
+
+  return null; // não encontrado
+}
+
+function buildOUTreeFromAD(ous) {
+  const root    = [];
+  const nodeMap = {};  // chave = caminho completo "Pai>Filho>Neto"
+
+  // Popula os mapas globais de lookup
+  for (const ou of ous) {
+    AD_DN_MAP[ou.distinguishedName.toLowerCase()] = ou;
+    const nameKey = ou.name.toLowerCase();
+    if (!AD_NAME_MAP[nameKey]) AD_NAME_MAP[nameKey] = [];
+    AD_NAME_MAP[nameKey].push(ou);
+  }
+
+  // Ordena por comprimento de DN (menor = mais alto na hierarquia)
+  const sorted = [...ous].sort((a, b) =>
+    a.distinguishedName.length - b.distinguishedName.length
+  );
+
+  for (const ou of sorted) {
+    // Extrai somente partes OU= do DN, excluindo DC=
+    const ouParts = ou.distinguishedName
+      .split(',')
+      .filter(p => p.trim().toUpperCase().startsWith('OU='))
+      .map(p => p.trim().slice(3));  // remove "OU="
+
+    if (!ouParts.length) continue;
+
+    // DN é escrito de filho para pai; reverter = pai para filho
+    const path = [...ouParts].reverse();
+
+    let currentLevel = root;
+    let keyAccum     = '';
+
+    for (let i = 0; i < path.length; i++) {
+      keyAccum = keyAccum ? `${keyAccum}>${path[i]}` : path[i];
+      const isLeaf = i === path.length - 1;
+
+      if (!nodeMap[keyAccum]) {
+        const icon = guessOuIcon(path[i]);
+        const newNode = {
+          id      : 'adou_' + keyAccum.replace(/[^a-z0-9]/gi, '_').toLowerCase(),
+          name    : path[i],
+          icon,
+          children: [],
+          // exactDn: DN real do AD, disponível apenas na folha correspondente
+          exactDn : isLeaf ? ou.distinguishedName : null,
+        };
+        nodeMap[keyAccum] = newNode;
+        currentLevel.push(newNode);
+      } else if (isLeaf && !nodeMap[keyAccum].exactDn) {
+        // Se o nó pai já foi criado sem DN (porque era só um caminho intermediário),
+        // e agora chegou a OU exata, guardamos o DN real
+        nodeMap[keyAccum].exactDn = ou.distinguishedName;
+      }
+      currentLevel = nodeMap[keyAccum].children;
+    }
+  }
+
+  return root;
+}
+
+
+function guessOuIcon(name) {
+  const n = name.toLowerCase();
+  if (/^ti$|tecnologia|infra|suporte/.test(n))           return '💻';
+  if (/rh|recurso|humano|pessoal/.test(n))               return '👔';
+  if (/financeiro|finance|contab|fiscal/.test(n))        return '💰';
+  if (/comercial|vendas|sales/.test(n))                  return '📊';
+  if (/operacion/.test(n))                               return '⚙️';
+  if (/diretor|diretoria|board/.test(n))                 return '🏢';
+  if (/usuario|user|people|pessoa/.test(n))              return '👥';
+  if (/computad|workstation|desktop|estacao/.test(n))    return '🖥️';
+  if (/server|servidor/.test(n))                         return '🗄️';
+  if (/grupo|group/.test(n))                             return '🗂️';
+  if (/servico|service|conta/.test(n))                   return '⚙️';
+  if (/admin|administr/.test(n))                         return '🔐';
+  return '📁';
+}
+
+
+function initWithADData() {
+  const speechBubble = document.getElementById('sysSpeechText');
+  const valStatus    = document.getElementById('sysValStatus');
+  const valDomain    = document.getElementById('sysValDomain');
+  const valUser      = document.getElementById('sysValUser');
+  const valOus       = document.getElementById('sysValOus');
+  const trayAdStatus = document.getElementById('trayAdStatus');
+
+  if (!window.AD_DATA) {
+    // ── Sem dados do AD ─────────────────────────────────────────
+    if (valStatus) valStatus.innerHTML = '<span class="status-dot dot-yellow"></span> AD Desconectado';
+    if (speechBubble) speechBubble.textContent = 'Active Directory offline. Execute o microserviço local (Start.bat) para buscar e sincronizar dados de domínio em tempo real!';
+    if (trayAdStatus) trayAdStatus.setAttribute('title', 'Active Directory: Desconectado');
+    return;
+  }
+
+  const { domain, currentUser, ous, generatedAt } = window.AD_DATA;
+
+  // ── Atualiza o painel de status do sistema ─────────────────────
+  if (valStatus) {
+    valStatus.innerHTML = '<span class="status-dot dot-green"></span> Online';
+  }
+  if (valDomain) {
+    valDomain.textContent = domain.dnsRoot;
+  }
+  if (valUser && currentUser) {
+    valUser.textContent = domain.netBiosName + '\\' + currentUser.samAccountName;
+  }
+  if (valOus && ous) {
+    valOus.textContent = ous.length + ' OUs carregadas';
+  }
+  if (speechBubble && currentUser) {
+    const genDate = new Date(generatedAt);
+    const genFmt  = genDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    speechBubble.textContent = 'Conectado ao domínio ' + domain.dnsRoot + ' com sucesso! Operador logado: ' + (currentUser.displayName || currentUser.samAccountName) + '. Sincronizado às ' + genFmt + '.';
+  }
+
+  // ── Atualiza o System Tray ─────────────────────────────────────
+  if (trayAdStatus) {
+    trayAdStatus.setAttribute('title', 'Active Directory: Conectado (' + domain.dnsRoot + ')');
+    const trayAdKey = trayAdStatus.querySelector('.pixel-icon rect:nth-child(1)');
+    if (trayAdKey) trayAdKey.setAttribute('fill', '#00aa00'); // Fica verde
+  }
+
+  // ── Pré-preencher campo de domínio ───────────────────────────
+  if (domainInput) {
+    domainInput.value = domain.dnsRoot;
+    updateEmailAndSam();  // atualiza preview de e-mail/SAM
+  }
+
+  // ── Substituir árvore de OUs pela estrutura real do AD ───────
+  if (ous && ous.length > 0) {
+    const adTree = buildOUTreeFromAD(ous);
+    if (adTree.length > 0) {
+      ouTree = adTree;
+      // Salva no localStorage para o modal do seletor de OU usar
+      saveTree(ouTree);
+      // Expande as raízes por padrão
+      expandedIds = new Set(['__root__']);
+      ouTree.slice(0, 3).forEach(n => expandedIds.add(n.id));
+    }
+
+    // ── Seletor de OU com pesquisa para o Lote ───────────────────────────
+    (function () {
+      const searchEl   = document.getElementById('bulkOuSearch');
+      const clearEl    = document.getElementById('bulkOuClear');
+      const dropEl     = document.getElementById('bulkOuDropdown');
+      const chipEl     = document.getElementById('bulkOuChip');
+      const chipName   = document.getElementById('bulkOuChipName');
+      const chipDnEl   = document.getElementById('bulkOuChipDn');
+      const chipRem    = document.getElementById('bulkOuChipRemove');
+      const hiddenEl   = document.getElementById('bulkOuSelect'); // input[type=hidden]
+
+      if (!searchEl) return; // sem AD_DATA ainda
+
+      
+      const sorted = [...ous].sort((a, b) => {
+        const da = a.distinguishedName.split(',').filter(p => p.toUpperCase().startsWith('OU=')).length;
+        const db = b.distinguishedName.split(',').filter(p => p.toUpperCase().startsWith('OU=')).length;
+        // OUs mais profundas primeiro (subpastas appearão antes das pastas pai)
+        if (da !== db) return db - da;
+        return a.distinguishedName.localeCompare(b.distinguishedName, 'pt-BR');
+      });
+
+      
+      function ouPath(ou) {
+        return ou.distinguishedName
+          .split(',')
+          .filter(p => p.trim().toUpperCase().startsWith('OU='))
+          .map(p => p.trim().slice(3))
+          .reverse();
+      }
+
+      
+      function filter(term) {
+        if (!term) return sorted;
+        const t = term.toLowerCase();
+        return sorted.filter(ou =>
+          ou.name.toLowerCase().includes(t) ||
+          ou.distinguishedName.toLowerCase().includes(t) ||
+          ouPath(ou).join(' ').toLowerCase().includes(t)
+        );
+      }
+
+      
+      function hl(text, term) {
+        if (!term) return text;
+        const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return text.replace(new RegExp(`(${esc})`, 'gi'), '<mark>$1</mark>');
+      }
+
+      
+      function renderDrop(results, term) {
+        dropEl.innerHTML = '';
+
+        if (!results.length) {
+          dropEl.innerHTML = `<div class="bulk-ou-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            Nenhuma OU encontrada para "<strong>${term}</strong>"
+          </div>`;
+          dropEl.style.display = 'block';
+          return;
+        }
+
+        // Limita a 80 resultados para performance
+        const slice = results.slice(0, 80);
+        slice.forEach((ou, idx) => {
+          const path     = ouPath(ou);
+          const icon     = guessOuIcon(ou.name);
+          const leafName = path[path.length - 1] || ou.name;          // última parte = nome da OU
+          const parentPath = path.slice(0, -1).join(' › ');            // caminho pai sem a folha
+
+          const item = document.createElement('div');
+          item.className = 'bulk-ou-drop-item';
+          item.dataset.idx = idx;
+          item.innerHTML = `
+            <span class="bulk-ou-drop-icon">${icon}</span>
+            <div class="bulk-ou-drop-info">
+              <div class="bulk-ou-drop-leaf">${hl(leafName, term)}${parentPath ? `<span class="bulk-ou-drop-parent"> › ${hl(parentPath, term)}</span>` : ''}</div>
+              <div class="bulk-ou-drop-dn">${hl(ou.distinguishedName, term)}</div>
+            </div>`;
+          item.addEventListener('mousedown', e => {
+            e.preventDefault();
+            select(ou);
+          });
+          dropEl.appendChild(item);
+        });
+
+        if (results.length > 80) {
+          const more = document.createElement('div');
+          more.className = 'bulk-ou-drop-more';
+          more.textContent = `+ ${results.length - 80} resultados — refine a busca`;
+          dropEl.appendChild(more);
+        }
+
+        dropEl.style.display = 'block';
+      }
+
+      
+      function select(ou) {
+        const path = ouPath(ou);
+        hiddenEl.value = ou.distinguishedName;
+        chipName.textContent = path.join(' › ');
+        chipDnEl.textContent = ou.distinguishedName;
+        chipEl.querySelector('.bulk-ou-chip-icon').textContent = guessOuIcon(ou.name);
+        chipEl.style.display = 'flex';
+        searchEl.value = '';
+        clearEl.style.display = 'none';
+        dropEl.style.display  = 'none';
+      }
+
+      
+      function clear() {
+        hiddenEl.value = '';
+        chipEl.style.display   = 'none';
+        searchEl.value         = '';
+        clearEl.style.display  = 'none';
+        dropEl.style.display   = 'none';
+      }
+
+      /* ── Eventos ── */
+      let debounce;
+      searchEl.addEventListener('input', function () {
+        clearEl.style.display = this.value ? 'flex' : 'none';
+        clearTimeout(debounce);
+        debounce = setTimeout(() => {
+          const term = this.value.trim();
+          if (!term) { dropEl.style.display = 'none'; return; }
+          renderDrop(filter(term), term);
+        }, 160);
+      });
+
+      searchEl.addEventListener('focus', function () {
+        const term = this.value.trim();
+        if (term.length >= 1) renderDrop(filter(term), term);
+        else if (!hiddenEl.value) renderDrop(sorted.slice(0, 50), ''); // mostra top-50 ao abrir (subpastas primeiro)
+      });
+
+      searchEl.addEventListener('blur', () => {
+        setTimeout(() => { dropEl.style.display = 'none'; }, 160);
+      });
+
+      searchEl.addEventListener('keydown', function (e) {
+        const items = dropEl.querySelectorAll('.bulk-ou-drop-item');
+        const active = dropEl.querySelector('.bulk-ou-drop-item.focused');
+        if (e.key === 'Escape') { dropEl.style.display = 'none'; return; }
+        if (!items.length) return;
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          const next = active ? active.nextElementSibling : items[0];
+          active?.classList.remove('focused');
+          if (next?.classList.contains('bulk-ou-drop-item')) next.classList.add('focused');
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          const prev = active?.previousElementSibling;
+          active?.classList.remove('focused');
+          if (prev?.classList.contains('bulk-ou-drop-item')) prev.classList.add('focused');
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (active) {
+            const idx = +active.dataset.idx;
+            const term = searchEl.value.trim();
+            const results = filter(term);
+            if (results[idx]) select(results[idx]);
+          }
+        }
+      });
+
+      clearEl.addEventListener('click',    clear);
+      chipRem.addEventListener('click',    clear);
+
+    })();
+  }
+  
+  if (window._computersRefreshData) {
+    window._computersRefreshData();
+  }
+}
+
+
+
+// initWithADData() é chamado pelo módulo do servidor após buscar /api/ad-data
+
+/* ═══════════════════════════════════════════════════════════════
+   USUÁRIO MODELO — Autocomplete (reutilizável)
+   Busca contra window.AD_DATA.users (exportado pelo Get-ADData.ps1).
+   Se AD_DATA não disponível, permite digitar manualmente o SAM.
+   Instanciado tanto para o formulário individual quanto para o lote.
+═══════════════════════════════════════════════════════════════ */
+
+function initUserSearch({
+  searchInputId, dropdownId, hiddenInputId,
+  chipId, chipAvatarId, chipNameId, chipSamId,
+  clearBtnId, removeBtnId,
+  ouInputId,      // (opcional) id do input hidden de OU — para preencher com a OU do modelo
+  groupsPanelId,  // (opcional) id do painel onde os grupos do modelo serão exibidos
+}) {
+  const searchInput = document.getElementById(searchInputId);
+  const dropdown    = document.getElementById(dropdownId);
+  const hiddenInput = document.getElementById(hiddenInputId);
+  const chip        = document.getElementById(chipId);
+  const chipAvatar  = document.getElementById(chipAvatarId);
+  const chipName    = document.getElementById(chipNameId);
+  const chipSam     = document.getElementById(chipSamId);
+  const clearBtn    = document.getElementById(clearBtnId);
+  const removeBtn   = document.getElementById(removeBtnId);
+  const ouInput     = ouInputId     ? document.getElementById(ouInputId)     : null;
+  const groupsPanel = groupsPanelId ? document.getElementById(groupsPanelId) : null;
+
+  if (!searchInput) return; // elemento não existe na página
+
+  let debounceTimer = null;
+
+  function getUsers() {
+    return (window.AD_DATA && window.AD_DATA.users) ? window.AD_DATA.users : [];
+  }
+
+  function getInitials(name) {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  function hlText(text, term) {
+    if (!term || !text) return escapeHTML(text);
+    const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const tNorm = normalize(term);
+    const txtNorm = normalize(text);
+    const idx = txtNorm.indexOf(tNorm);
+    if (idx === -1) return escapeHTML(text);
+    return escapeHTML(text.substring(0, idx)) + '<mark>' + escapeHTML(text.substring(idx, idx + term.length)) + '</mark>' + escapeHTML(text.substring(idx + term.length));
+  }
+
+  function filterUsers(term) {
+    const normalize = s => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
+    const t = normalize(term);
+    return getUsers().filter(u =>
+      normalize(u.samAccountName).includes(t) ||
+      normalize(u.displayName).includes(t)    ||
+      normalize(u.name).includes(t)           ||
+      normalize(u.department).includes(t)
+    ).slice(0, 10);
+  }
+
+  function renderDropdown(results, term) {
+    dropdown.innerHTML = '';
+    if (!results.length) {
+      dropdown.innerHTML = `
+        <div class="user-dropdown-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          Nenhum usuário encontrado
+        </div>`;
+      dropdown.style.display = 'block';
+      return;
+    }
+    results.forEach(u => {
+      const item = document.createElement('div');
+      item.className = 'user-dropdown-item';
+      const initials = getInitials(u.displayName || u.samAccountName);
+      const groupsArray = Array.isArray(u.groups) ? u.groups : (typeof u.groups === 'string' ? [u.groups] : []);
+      const groupCount = groupsArray.length;
+      item.innerHTML = `
+        <div class="user-dropdown-avatar">${initials}</div>
+        <div class="user-dropdown-info">
+          <div class="user-dropdown-name">${hlText(u.displayName || u.samAccountName, term)}</div>
+          <div class="user-dropdown-meta">
+            <span class="user-dropdown-sam">${hlText(u.samAccountName, term)}</span>
+            ${u.department ? `<span class="user-dropdown-dept">${u.department}</span>` : ''}
+            ${groupCount ? `<span class="user-dropdown-groups-badge">${groupCount} grupo${groupCount !== 1 ? 's' : ''}</span>` : ''}
+          </div>
+        </div>`;
+      item.addEventListener('mousedown', e => { e.preventDefault(); selectUser(u); });
+      dropdown.appendChild(item);
+    });
+    dropdown.style.display = 'block';
+  }
+
+  
+  function renderGroupsPanel(u) {
+    if (!groupsPanel) return;
+    const groups = Array.isArray(u?.groups) ? u.groups : (typeof u?.groups === 'string' ? [u.groups] : []);
+
+    if (!groups.length) {
+      groupsPanel.style.display = 'none';
+      return;
+    }
+
+    groupsPanel.innerHTML = `
+      <div class="model-groups-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        Grupos do modelo <strong>${u.displayName || u.samAccountName}</strong>
+        <span class="model-groups-count">${groups.length} grupo${groups.length !== 1 ? 's' : ''} serão copiados</span>
+      </div>
+      <div class="model-groups-list">
+        ${groups.map(g => `<span class="model-group-tag">${g}</span>`).join('')}
+      </div>`;
+    groupsPanel.style.display = 'block';
+  }
+
+  function selectUser(u) {
+    hiddenInput.value = u.samAccountName;
+    const initials = getInitials(u.displayName || u.samAccountName);
+    chipAvatar.textContent = initials;
+    chipName.textContent   = u.displayName || u.samAccountName;
+    chipSam.textContent    = u.samAccountName
+      + (u.department ? ` · ${u.department}` : '')
+      + (u.title      ? ` · ${u.title}`      : '');
+    chip.style.display = 'flex';
+    searchInput.value      = '';
+    clearBtn.style.display = 'none';
+    dropdown.style.display = 'none';
+
+    // ── Preenche a OU automaticamente com a OU do usuário modelo ──
+    if (ouInput && u.ou) {
+      ouInput.value = u.ou;
+      // Atualiza o label do picker de OU para refletir a seleção automática
+      const pickerLabel = document.getElementById('ouPickerLabel');
+      const breadcrumb  = document.getElementById('ouBreadcrumb');
+      const pickerBtn   = document.getElementById('openOuPicker');
+      if (pickerLabel) pickerLabel.textContent = u.ou;
+      if (pickerBtn)   pickerBtn.classList.add('has-value');
+      if (breadcrumb) {
+        const domain = document.getElementById('domain')?.value || 'empresa.com.br';
+        // Extrai as partes OU= do DN para mostrar o breadcrumb
+        const parts = u.ou.split(',').filter(p => p.trim().toUpperCase().startsWith('OU=')).map(p => p.trim().slice(3)).reverse();
+        const allParts = [domain, ...parts];
+        breadcrumb.innerHTML = allParts.map((p, i, arr) => {
+          const isLast = i === arr.length - 1;
+          return `<span class="bc-part">${p}</span>` + (isLast ? '' : '<span class="bc-sep"> › </span>');
+        }).join('');
+        breadcrumb.style.display = 'flex';
+      }
+      // Atualiza o nó selecionado internamente para que o modal também saiba
+      selectedNode = { name: u.ou.split(',')[0]?.replace(/^OU=/i,'') || u.ou, trail: [], dn: u.ou };
+    }
+
+    // ── Exibe os grupos do modelo ──
+    renderGroupsPanel(u);
+  }
+
+  function clearSelection() {
+    hiddenInput.value      = '';
+    chip.style.display     = 'none';
+    searchInput.value      = '';
+    clearBtn.style.display = 'none';
+    if (groupsPanel) groupsPanel.style.display = 'none';
+  }
+
+  searchInput.addEventListener('input', function () {
+    const term = this.value.trim();
+    clearBtn.style.display = term ? 'flex' : 'none';
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      if (term.length < 2) { dropdown.style.display = 'none'; return; }
+      const users = getUsers();
+      if (!users.length) {
+        hiddenInput.value  = term;
+        dropdown.innerHTML = `
+          <div class="user-dropdown-manual">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            AD não conectado — usando <strong>${term}</strong> como SAM do modelo
+          </div>`;
+        dropdown.style.display = 'block';
+        return;
+      }
+      renderDropdown(filterUsers(term), term);
+    }, 200);
+  });
+
+  searchInput.addEventListener('keydown', function (e) {
+    const items  = dropdown.querySelectorAll('.user-dropdown-item');
+    const active = dropdown.querySelector('.user-dropdown-item.focused');
+    if (e.key === 'Escape') { dropdown.style.display = 'none'; return; }
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = active ? active.nextElementSibling : items[0];
+      if (active) active.classList.remove('focused');
+      if (next && next.classList.contains('user-dropdown-item')) next.classList.add('focused');
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = active ? active.previousElementSibling : null;
+      if (active) active.classList.remove('focused');
+      if (prev && prev.classList.contains('user-dropdown-item')) prev.classList.add('focused');
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (active) {
+        const idx     = [...items].indexOf(active);
+        const results = filterUsers(searchInput.value.trim());
+        if (results[idx]) selectUser(results[idx]);
+      }
+    }
+  });
+
+  searchInput.addEventListener('blur',  () => setTimeout(() => { dropdown.style.display = 'none'; }, 150));
+  searchInput.addEventListener('focus', () => {
+    if (searchInput.value.trim().length >= 2)
+      renderDropdown(filterUsers(searchInput.value.trim()), searchInput.value.trim());
+  });
+
+  clearBtn.addEventListener('click', () => {
+    searchInput.value      = '';
+    clearBtn.style.display = 'none';
+    dropdown.style.display = 'none';
+    hiddenInput.value      = '';
+  });
+
+  removeBtn.addEventListener('click', clearSelection);
+
+  // Retorna a função de seleção para uso externo (ex: seletor de OU na árvore)
+  return { selectUser };
+}
+
+// ── Instância para o formulário individual ──
+const _templateSearchInstance = initUserSearch({
+  searchInputId : 'templateUserSearch',
+  dropdownId    : 'userDropdown',
+  hiddenInputId : 'templateUser',
+  chipId        : 'templateChip',
+  chipAvatarId  : 'templateChipAvatar',
+  chipNameId    : 'templateChipName',
+  chipSamId     : 'templateChipSam',
+  clearBtnId    : 'clearTemplateUser',
+  removeBtnId   : 'removeTemplateUser',
+  ouInputId     : 'ou',               // preenche a OU automaticamente
+  groupsPanelId : 'templateGroupsPanel', // exibe os grupos do modelo
+});
+// Exposta globalmente para que a árvore de OUs possa acionar ao clicar num usuário
+window._applyTemplateUser = _templateSearchInstance?.selectUser;
+
+// ── Instância para o formulário de lote ──
+initUserSearch({
+  searchInputId : 'templateUserSearchBulk',
+  dropdownId    : 'userDropdownBulk',
+  hiddenInputId : 'templateUserBulk',
+  chipId        : 'templateChipBulk',
+  chipAvatarId  : 'templateChipAvatarBulk',
+  chipNameId    : 'templateChipNameBulk',
+  chipSamId     : 'templateChipSamBulk',
+  clearBtnId    : 'clearTemplateUserBulk',
+  removeBtnId   : 'removeTemplateUserBulk',
+  groupsPanelId : 'templateGroupsPanelBulk', // exibe grupos no lote também
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   SERVIDOR LOCAL — Integração com Server.ps1 (unificado)
+   Fluxo:
+     1. checkServer() → GET /api/ping → recebe token de sessão
+     2. loadADData()  → GET /api/ad-data → popula window.AD_DATA
+     3. executarCriarUsuario() → POST /api/criar-usuario (JSON)
+═══════════════════════════════════════════════════════════════ */
+
+(function () {
+  const SERVER_PORT = 7510; // Lido do config.json pelo servidor; sincronize aqui se mudar
+  const SERVER_BASE = (window.location.protocol === 'http:' || window.location.protocol === 'https:')
+    ? `${window.location.protocol}//${window.location.host}`
+    : `http://localhost:${SERVER_PORT}`;
+
+  // Exporta para acesso global (usado nos outros módulos abaixo)
+  window._SERVER_BASE = SERVER_BASE;
+  window._serverToken = null;
+
+  let serverAvailable = false;
+
+  const executeBtnEl  = document.getElementById('executeBtn');
+  const executeBulkBtnEl = document.getElementById('executeBulkBtn');
+  const terminalPanel = document.getElementById('terminalPanel');
+  const terminalOut   = document.getElementById('terminalOutput');
+  const terminalSt    = document.getElementById('terminalStatus');
+
+  /* ── Verifica disponibilidade do servidor e obtém token ── */
+  let adLoaded = false;
+  let m365Loaded = false;
+
+  /* ── Verifica disponibilidade do servidor e obtém token ── */
+  async function checkServer() {
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 1800);
+      const res   = await fetch(`${SERVER_BASE}/api/ping`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      window._serverToken = data.token;
+      serverAvailable     = true;
+      setServerIndicator(true, data.user, data.isAdmin);
+      
+      // Carrega dados do AD apenas uma vez ao conectar
+      if (!adLoaded) {
+        loadADData();
+      }
+      // Checa status do M365 apenas uma vez ao conectar
+      if (!m365Loaded) {
+        checkM365Status();
+      }
+    } catch {
+      window._serverToken = null;
+      serverAvailable     = false;
+      setServerIndicator(false);
+      updateM365UI(false);
+      
+      // Reset flags so it reloads if the server drops and reconnects
+      adLoaded = false;
+      m365Loaded = false;
+      
+      // Mesmo sem servidor, inicializa a UI (modo sem AD)
+      initWithADData();
+    }
+  }
+
+  /* ── Busca dados do AD ao vivo via /api/ad-data ── */
+  async function loadADData() {
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const res   = await fetch(`${SERVER_BASE}/api/ad-data`, {
+        headers: { 'X-Server-Token': window._serverToken },
+        signal : ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.error) {
+          window.AD_DATA = data;
+          adLoaded = true;
+        }
+      }
+    } catch { /* servidor offline ou AD indisponível — sem dados */ }
+    // Inicializa a UI com os dados disponíveis (ou sem dados)
+    initWithADData();
+  }
+
+  /* ── Atualiza indicador visual do servidor ── */
+  function setServerIndicator(online, user, isAdmin) {
+    // Dashboard retrô — atualiza a linha "Servidor Local"
+    const sysValServer = document.getElementById('sysValServer');
+    if (sysValServer) {
+      if (online) {
+        const adminTag = isAdmin ? ' (Admin)' : '';
+        sysValServer.innerHTML = `<span class="status-dot dot-green"></span> Online${adminTag}`;
+      } else {
+        sysValServer.innerHTML = '<span class="status-dot dot-red"></span> Offline';
+      }
+    }
+
+    // Botão "Executar" na aba individual
+    if (executeBtnEl) {
+      executeBtnEl.style.display = online ? 'flex' : 'none';
+      executeBtnEl.title = online
+        ? `Executar via servidor local (${user || 'localhost'})`
+        : 'Servidor offline — execute Start.bat';
+    }
+
+    // Botão "Executar" na aba em lote
+    if (executeBulkBtnEl) {
+      executeBulkBtnEl.style.display = online ? 'flex' : 'none';
+      executeBulkBtnEl.title = online
+        ? `Executar via servidor local (${user || 'localhost'})`
+        : 'Servidor offline — execute Start.bat';
+    }
+  }
+
+  /* ── Exibe resultado no terminal ── */
+  function setTerminalStatus(type, text) {
+    if (!terminalSt) return;
+    terminalSt.textContent = text;
+    terminalSt.className   = `terminal-status-badge terminal-st-${type}`;
+  }
+
+  function appendTermLine(text, typeHint) {
+    const line  = document.createElement('div');
+    line.className = 'tline';
+    const lower = (text || '').toLowerCase();
+    if (typeHint === 'error' || text.includes('❌') || lower.includes('falha') || lower.includes('erro') || lower.includes('error') || lower.includes('exception'))
+      line.classList.add('tl-error');
+    else if (text.includes('✅') || lower.includes('sucesso') || lower.includes('criado') || lower.includes('copiado') || /\bok\b/.test(lower))
+      line.classList.add('tl-success');
+    else if (text.includes('⚠') || lower.includes('warning') || lower.includes('aviso') || lower.includes('pulando'))
+      line.classList.add('tl-warn');
+    else if (text.includes('🔗') || text.includes('⚡') || text.includes('ℹ') || typeHint === 'info' || lower.includes('copiando') || lower.includes('grupos'))
+      line.classList.add('tl-info');
+    else if (text.startsWith('#') || text.startsWith('//'))
+      line.classList.add('tl-comment');
+    line.textContent = text || '\u00a0';
+    terminalOut.appendChild(line);
+    terminalOut.scrollTop = terminalOut.scrollHeight;
+  }
+
+  /* ── Chama endpoint e exibe resultado no terminal ── */
+  async function chamarEndpoint(endpoint, method, body, termPanel, termOutput, termStatus) {
+    const panel = termPanel  || terminalPanel;
+    const out   = termOutput || terminalOut;
+    const st    = termStatus || terminalSt;
+    const addLine = (t, h) => { appendTermLineInto(out, t, h); };
+    const setStatus = (tp, tx) => { if (st) { st.textContent = tx; st.className = `terminal-status-badge terminal-st-${tp}`; } };
+
+    if (!window._serverToken) {
+      showToast('Servidor offline. Execute Start.bat.', '#f59e0b');
+      return;
+    }
+
+    panel.style.display = 'block';
+    out.innerHTML = '';
+    setStatus('running', '⏳ Executando...');
+    addLine('⚡ Enviando ao servidor...', 'info');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 315000);
+      const res   = await fetch(`${SERVER_BASE}${endpoint}`, {
+        method : method || 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Server-Token': window._serverToken },
+        body   : body ? JSON.stringify(body) : undefined,
+        signal : ctrl.signal,
+      });
+      clearTimeout(timer);
+
+      if (res.status === 401) {
+        await checkServer();
+        throw new Error('Token expirou (servidor foi reiniciado). Tente novamente.');
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Erro HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      out.innerHTML = '';
+      for (const line of (data.lines || [])) {
+        addLine(line);
+        await new Promise(r => setTimeout(r, 20));
+      }
+
+      if (data.success) {
+        setStatus('success', '✅ Concluído com sucesso');
+        return data;
+      } else {
+        setStatus('error', `❌ Falhou`);
+        showToast('Falhou — veja o terminal.', '#ef4444');
+        return null;
+      }
+    } catch (err) {
+      out.innerHTML = '';
+      addLine(`❌ ${err.message}`, 'error');
+      setStatus('error', 'Erro de comunicação');
+      showToast('Erro ao comunicar com o servidor.', '#ef4444');
+      return null;
+    }
+  }
+
+  /* ── appendTermLine que aceita elemento customizado ── */
+  function appendTermLineInto(container, text, typeHint) {
+    const line  = document.createElement('div');
+    line.className = 'tline';
+    const lower = (text || '').toLowerCase();
+    if (typeHint === 'error' || text.includes('❌') || lower.includes('falha') || lower.includes('erro') || lower.includes('error'))
+      line.classList.add('tl-error');
+    else if (text.includes('✅') || lower.includes('sucesso') || lower.includes('criado') || lower.includes('desbloqueada') || lower.includes('desabilitada'))
+      line.classList.add('tl-success');
+    else if (text.includes('⚠') || lower.includes('warning') || lower.includes('aviso'))
+      line.classList.add('tl-warn');
+    else if (text.includes('🔗') || text.includes('⚡') || text.includes('🔑') || text.includes('📂') || text.includes('📝') || typeHint === 'info')
+      line.classList.add('tl-info');
+    line.textContent = text || '\u00a0';
+    container.appendChild(line);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  // Expõe chamarEndpoint para os outros módulos
+  window._chamarEndpoint = chamarEndpoint;
+
+  /* ── Botão Executar (Criar Usuário) — POST /api/criar-usuario ── */
+  if (executeBtnEl) {
+    executeBtnEl.addEventListener('click', async () => {
+      const userData = executeBtnEl._userData;
+      if (!userData) { showToast('Gere o script primeiro.', '#f59e0b'); return; }
+
+      // Monta payload JSON para o endpoint
+      const payload = {
+        nome         : userData.firstName,
+        sobrenome    : userData.lastName,
+        nomeCompleto : userData.fullName,
+        cpf          : userData.cpf11,
+        email        : userData.email,
+        sam          : userData.sam,
+        ou           : userData.ou,
+        senha        : userData.password,
+        trocarSenha  : userData.mustChange,
+        habilitado   : userData.enabled,
+        departamento : '',
+        usuarioModelo: userData.templateUser,
+      };
+
+      const result = await chamarEndpoint('/api/criar-usuario', 'POST', payload,
+        terminalPanel, terminalOut, terminalSt);
+      if (result && result.success) {
+        showToast('Usuário criado com sucesso! ✓');
+        const successInfoPanel = document.getElementById('successInfoPanel');
+        const createdUserName = document.getElementById('createdUserName');
+        const createdUserEmail = document.getElementById('createdUserEmail');
+        const createdUserPassword = document.getElementById('createdUserPassword');
+        if (successInfoPanel && createdUserName && createdUserEmail && createdUserPassword) {
+          createdUserName.textContent = payload.nomeCompleto;
+          createdUserEmail.textContent = payload.email;
+          createdUserPassword.textContent = payload.senha;
+          successInfoPanel.style.display = 'block';
+          successInfoPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        // Se houver licenças ou grupos do M365 selecionados, aplicar na nuvem
+        const selectedLicense = m365LicenseSelect ? m365LicenseSelect.value : '';
+        const selectedGroups = [];
+        selectedM365GroupsMap.forEach(g => {
+          selectedGroups.push({
+            id: g.id,
+            source: g.source,
+            name: g.name
+          });
+        });
+
+        if (m365Connected && (selectedLicense || selectedGroups.length > 0)) {
+          const addLine = (t, h) => { appendTermLineInto(terminalOut, t, h); };
+          addLine('\n⚡ Aplicando configurações na Nuvem (Microsoft 365 / Exchange Online)...', 'info');
+          
+          const m365Payload = {
+            userPrincipalName: payload.email,
+            licenses: selectedLicense ? [selectedLicense] : [],
+            groups: selectedGroups
+          };
+
+          try {
+            const m365Res = await fetch(`${SERVER_BASE}/api/m365/aplicar`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-Server-Token': window._serverToken },
+              body: JSON.stringify(m365Payload)
+            });
+            if (m365Res.ok) {
+              const m365Data = await m365Res.json();
+              for (const line of (m365Data.lines || [])) {
+                addLine(line);
+                await new Promise(r => setTimeout(r, 20));
+              }
+              if (m365Data.success) {
+                showToast('M365 / Exchange aplicado com sucesso! ✓');
+              } else {
+                showToast('Algumas operações na nuvem falharam.', '#ef4444');
+              }
+            } else {
+              addLine('❌ Falha ao comunicar com o endpoint de M365 do servidor.', 'error');
+            }
+          } catch (err) {
+            addLine(`❌ Erro no M365: ${err.message}`, 'error');
+          }
+        }
+      }
+    });
+  }
+
+  // Copiar informações do usuário criado
+  const copyCreatedInfoBtn = document.getElementById('copyCreatedInfoBtn');
+  if (copyCreatedInfoBtn) {
+    copyCreatedInfoBtn.addEventListener('click', () => {
+      const name = document.getElementById('createdUserName')?.textContent || '';
+      const email = document.getElementById('createdUserEmail')?.textContent || '';
+      const password = document.getElementById('createdUserPassword')?.textContent || '';
+      const textToCopy = `Nome: ${name}\r\nE-mail: ${email}\r\nSenha: ${password}`;
+      copyText(textToCopy);
+    });
+  }
+
+  document.getElementById('terminalClearBtn')?.addEventListener('click', () => {
+    terminalOut.innerHTML = '';
+    terminalPanel.style.display = 'none';
+    const successInfoPanel = document.getElementById('successInfoPanel');
+    if (successInfoPanel) successInfoPanel.style.display = 'none';
+  });
+
+  /* ── M365 (Microsoft Graph & Exchange) Integration ── */
+  const btnConnectM365    = document.getElementById('btnConnectM365');
+  const sysValM365        = document.getElementById('sysValM365');
+  const m365FormSection   = document.getElementById('m365FormSection');
+  const m365LicenseSelect = document.getElementById('m365License');
+  const m365GroupsContainer = document.getElementById('m365GroupsContainer');
+  let m365Connected = false;
+  let loadedM365Groups = [];
+  const selectedM365GroupsMap = new Map();
+
+  // Dicionário de tradução dos SKU Part Numbers para nomes oficiais da Microsoft
+  const SKU_MAP = {
+    'O365_BUSINESS_ESSENTIALS': 'Microsoft 365 Business Basic',
+    'O365_BUSINESS_PREMIUM': 'Microsoft 365 Business Premium',
+    'O365_BUSINESS': 'Microsoft 365 Business Standard',
+    'SMB_BUSINESS': 'Microsoft 365 Business Standard',
+    'EXCHANGESTANDARD': 'Exchange Online (Plan 1)',
+    'EXCHANGEENTERPRISE': 'Exchange Online (Plan 2)',
+    'SPE_E3': 'Microsoft 365 E3',
+    'SPE_E5': 'Microsoft 365 E5',
+    'ENTERPRISEPACK': 'Office 365 E3',
+    'ENTERPRISEPREMIUM': 'Office 365 E5',
+    'DEVELOPER_PACK': 'Microsoft 365 E5 Developer',
+    'POWER_BI_PRO': 'Power BI Pro',
+    'POWER_BI_STANDARD': 'Power BI Free',
+    'TEAMS_ENTERPRISE': 'Microsoft Teams Enterprise',
+    'MCOPCOM': 'Microsoft 365 Copilot',
+    'ONEDRIVESTANDARD': 'OneDrive for Business (Plan 1)',
+    'ONEDRIVEENTERPRISE': 'OneDrive for Business (Plan 2)',
+    'PROJECT_PROFESSIONAL': 'Project Plan 3',
+    'VISIOPRO': 'Visio Plan 1',
+    'DYN365_CUSTOMER_VOICE_TRIAL': 'Dynamics 365 Customer Voice Trial',
+    'COPILOT_STUDIO_VIRAL_TRIAL': 'Microsoft Copilot Studio Viral Trial',
+    'FABRIC_FREE': 'Microsoft Fabric (Free)',
+    'POWERAPPS_DEVELOPER': 'Microsoft Power Apps for Developer',
+    'POWERAUTOMATE_FREE': 'Microsoft Power Automate Free',
+    'STREAM_TRIAL': 'Microsoft Stream Trial',
+    'PLANNER_PROJECT_PLAN3': 'Planner and Project Plan 3',
+    'VISIO_PLAN1': 'Visio Plan 1'
+  };
+
+  function getFriendlySkuName(skuPartNumber) {
+    if (SKU_MAP[skuPartNumber]) {
+      return SKU_MAP[skuPartNumber];
+    }
+    // Caso não esteja no mapeamento, formata de forma legível
+    return skuPartNumber
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  }
+
+  async function checkM365Status() {
+    if (!window._serverToken) {
+      updateM365UI(false);
+      return;
+    }
+    try {
+      const res = await fetch(`${SERVER_BASE}/api/m365/status`, {
+        headers: { 'X-Server-Token': window._serverToken }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const connected = data.graphConnected && data.exchangeConnected;
+        m365Connected = connected;
+        updateM365UI(connected, data.modulesInstalled);
+        if (connected) {
+          loadM365Data();
+          m365Loaded = true;
+        }
+      }
+    } catch {
+      updateM365UI(false);
+    }
+  }
+
+  function updateM365UI(connected, modules) {
+    const disableM365Row = document.getElementById('disableM365Row');
+    const disableBulkM365Row = document.getElementById('disableBulkM365Row');
+    if (sysValM365) {
+      if (connected) {
+        sysValM365.innerHTML = '<span class="status-dot dot-green"></span> Online';
+        if (btnConnectM365) btnConnectM365.style.display = 'none';
+        if (m365FormSection) m365FormSection.style.display = 'block';
+        if (disableM365Row) disableM365Row.style.display = 'flex';
+        if (disableBulkM365Row) disableBulkM365Row.style.display = 'flex';
+      } else {
+        sysValM365.innerHTML = '<span class="status-dot dot-red"></span> Offline';
+        if (m365FormSection) m365FormSection.style.display = 'none';
+        if (disableM365Row) disableM365Row.style.display = 'none';
+        if (disableBulkM365Row) disableBulkM365Row.style.display = 'none';
+        if (modules && modules.exchange && modules.graph) {
+          if (btnConnectM365) {
+            btnConnectM365.style.display = 'block';
+            btnConnectM365.textContent = 'Conectar M365';
+            btnConnectM365.disabled = false;
+          }
+        } else {
+          if (btnConnectM365) btnConnectM365.style.display = 'none';
+        }
+      }
+    }
+  }
+
+  async function connectM365() {
+    if (!window._serverToken) return;
+    if (btnConnectM365) {
+      btnConnectM365.disabled = true;
+      btnConnectM365.textContent = 'Conectando...';
+    }
+    showToast('Iniciando autenticação no Azure/M365. Veja a tela do servidor se abrir pop-up.', '#f59e0b');
+
+    terminalPanel.style.display = 'block';
+    terminalOut.innerHTML = '';
+    terminalPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    const addLine = (t, h) => { appendTermLineInto(terminalOut, t, h); };
+
+    try {
+      const res = await fetch(`${SERVER_BASE}/api/m365/conectar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Server-Token': window._serverToken }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        for (const line of (data.lines || [])) {
+          addLine(line);
+          await new Promise(r => setTimeout(r, 20));
+        }
+        if (data.success) {
+          showToast('Conectado ao M365 com sucesso! ✓');
+          checkM365Status();
+        } else {
+          showToast('Falha na conexão com o M365.', '#ef4444');
+          if (btnConnectM365) {
+            btnConnectM365.disabled = false;
+            btnConnectM365.textContent = 'Conectar M365';
+          }
+        }
+      }
+    } catch (err) {
+      addLine(`❌ Erro: ${err.message}`, 'error');
+      showToast('Erro ao comunicar com o servidor.', '#ef4444');
+      if (btnConnectM365) {
+        btnConnectM365.disabled = false;
+        btnConnectM365.textContent = 'Conectar M365';
+      }
+    }
+  }
+
+  async function loadM365Data() {
+    if (!window._serverToken || !m365Connected) return;
+
+    try {
+      const res = await fetch(`${SERVER_BASE}/api/m365/licencas`, {
+        headers: { 'X-Server-Token': window._serverToken }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (m365LicenseSelect) {
+          m365LicenseSelect.innerHTML = '<option value="">-- Nenhuma licença selecionada --</option>';
+          (data.licenses || []).forEach(lic => {
+            const opt = document.createElement('option');
+            opt.value = lic.skuId;
+            const friendlyName = getFriendlySkuName(lic.skuPartNumber);
+            opt.textContent = `${friendlyName} (${lic.availableUnits} de ${lic.totalUnits} disponíveis)`;
+            m365LicenseSelect.appendChild(opt);
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao obter licenças M365:', err);
+    }
+
+    function renderM365Groups(filterText = '') {
+      if (!m365GroupsContainer) return;
+      m365GroupsContainer.innerHTML = '';
+
+      const query = filterText.toLowerCase().trim();
+      const filtered = loadedM365Groups.filter(g => {
+        const nameMatch = g.name ? g.name.toLowerCase().includes(query) : false;
+        const mailMatch = g.mail ? g.mail.toLowerCase().includes(query) : false;
+        return nameMatch || mailMatch;
+      });
+
+      if (filtered.length === 0) {
+        m365GroupsContainer.innerHTML = '<span style="opacity: 0.5; padding: 4px;">Nenhum grupo correspondente encontrado.</span>';
+        return;
+      }
+
+      filtered.forEach(g => {
+        const isChecked = selectedM365GroupsMap.has(g.id);
+        const div = document.createElement('div');
+        div.style.display = 'flex';
+        div.style.alignItems = 'flex-start';
+        div.style.gap = '6px';
+        div.style.padding = '3px 4px';
+        div.style.borderBottom = '1px solid #f3f4f6';
+        div.innerHTML = `
+          <input type="checkbox" class="m365-group-cb" value="${escapeHTML(g.id)}" ${isChecked ? 'checked' : ''} id="cb_${escapeHTML(g.id)}" style="margin-top: 1px;">
+          <label for="cb_${escapeHTML(g.id)}" style="cursor:pointer; font-size:10px; line-height: 1.2; word-break: break-word;" title="${escapeHTML(g.name)} (${escapeHTML(g.mail)})">${escapeHTML(g.name)}<span style="opacity:0.6; font-size:8px; margin-left: 6px; font-weight: normal; white-space: nowrap;">[${escapeHTML(g.type)}]</span></label>
+        `;
+        
+        const cb = div.querySelector('input');
+        cb.addEventListener('change', (e) => {
+          if (e.target.checked) {
+            selectedM365GroupsMap.set(g.id, g);
+          } else {
+            selectedM365GroupsMap.delete(g.id);
+          }
+        });
+
+        m365GroupsContainer.appendChild(div);
+      });
+    }
+
+    const m365GroupsSearch = document.getElementById('m365GroupsSearch');
+    if (m365GroupsSearch && !m365GroupsSearch._hasListener) {
+      m365GroupsSearch.addEventListener('input', (e) => {
+        renderM365Groups(e.target.value);
+      });
+      m365GroupsSearch._hasListener = true;
+    }
+
+    try {
+      const res = await fetch(`${SERVER_BASE}/api/m365/grupos`, {
+        headers: { 'X-Server-Token': window._serverToken }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        loadedM365Groups = data.groups || [];
+        selectedM365GroupsMap.clear();
+        if (m365GroupsSearch) m365GroupsSearch.value = '';
+        renderM365Groups();
+      }
+    } catch (err) {
+      console.error('Erro ao obter grupos M365:', err);
+    }
+  }
+
+  if (btnConnectM365) {
+    btnConnectM365.addEventListener('click', connectM365);
+  }
+
+  /* ── Botão Executar (Criar Lote) — POST /api/criar-lote ── */
+  if (executeBulkBtnEl) {
+    executeBulkBtnEl.addEventListener('click', async () => {
+      // O lote foi preparado e deve estar armazenado globalmente ou no botão.
+      // Vamos verificar se há _bulkParsedUsers
+      if (typeof _bulkParsedUsers === 'undefined' || !_bulkParsedUsers || !_bulkParsedUsers.length) {
+        showToast('Gere o script do lote primeiro.', '#f59e0b');
+        return;
+      }
+
+      // Preparando os usuários
+      const payloadUsuarios = _bulkParsedUsers.map(u => ({
+        nome         : u.firstName,
+        sobrenome    : u.lastName || u.surnames || '',
+        nomeCompleto : u.fullName,
+        cpf          : u.cpf11,
+        email        : u.email,
+        sam          : u.sam,
+        ou           : u.ou,
+        senha        : u.password,
+        trocarSenha  : true,
+        habilitado   : true,
+        departamento : '',
+        usuarioModelo: document.getElementById('templateUserBulk') ? document.getElementById('templateUserBulk').value.trim() : ''
+      }));
+
+      const payload = { usuarios: payloadUsuarios };
+
+      // Se houver aba terminal, nós a usamos
+      const terminalPanel = document.getElementById('bulkTerminalPanel');
+      const terminalOut   = document.getElementById('bulkTerminalOutput');
+      const terminalSt    = document.getElementById('bulkTerminalStatus');
+
+      const result = await window._chamarEndpoint('/api/criar-lote', 'POST', payload,
+        terminalPanel, terminalOut, terminalSt);
+      
+      if (result && result.success) {
+        showToast(`Lote executado com sucesso: ${result.sucesso} criados. ✓`);
+      } else if (result) {
+        showToast(`Lote executado com erros: ${result.falha} falhas.`, '#f44336');
+      }
+    });
+  }
+
+  document.getElementById('bulkTerminalClearBtn')?.addEventListener('click', () => {
+    const term = document.getElementById('bulkTerminalPanel');
+    const out  = document.getElementById('bulkTerminalOutput');
+    const st   = document.getElementById('bulkTerminalStatus');
+    if (term) term.style.display = 'none';
+    if (out) out.innerHTML = '';
+    if (st) st.textContent = '';
+  });
+
+  /* ── Inicialização ── */
+  checkServer();
+  setInterval(checkServer, 30000); // re-verifica a cada 30s
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   TAB SWITCHING
+   Controla a visibilidade dos painéis: Criar / Desabilitar / Bloqueados
+═══════════════════════════════════════════════════════════════ */
+(function () {
+  const tabCreate  = document.getElementById('tabBtnCreate');
+  const tabDisable = document.getElementById('tabBtnDisable');
+  const tabLocked  = document.getElementById('tabBtnLocked');
+  const tabM365    = document.getElementById('tabBtnM365');
+  const tabComputers = document.getElementById('tabBtnComputers');
+  const mainPanel  = document.querySelector('main.container');
+  const disPanel   = document.getElementById('panelDisable');
+  const lockPanel  = document.getElementById('panelLocked');
+  const m365Panel  = document.getElementById('panelM365');
+  const compPanel  = document.getElementById('panelComputers');
+
+  const allTabs   = [tabCreate, tabDisable, tabLocked, tabM365, tabComputers].filter(Boolean);
+  const allPanels = [mainPanel, disPanel, lockPanel, m365Panel, compPanel].filter(Boolean);
+
+  let currentTabName = 'create';
+
+  // -- Alternancia de Abas ----------------------------------------
+  function showTab(name) {
+    currentTabName = name;
+    allTabs.forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+    allPanels.forEach(p => { p.style.display = 'none'; });
+
+    // Se a janela estiver minimizada, restaura ao alternar
+    const win = document.getElementById('mainOSWindow');
+    if (win) win.style.display = 'flex';
+
+    if (name === 'create') {
+      tabCreate.classList.add('active'); tabCreate.setAttribute('aria-selected', 'true');
+      if (mainPanel) mainPanel.style.display = '';
+    } else if (name === 'disable') {
+      tabDisable.classList.add('active'); tabDisable.setAttribute('aria-selected', 'true');
+      if (disPanel) disPanel.style.display = '';
+    } else if (name === 'locked') {
+      if (tabLocked) { tabLocked.classList.add('active'); tabLocked.setAttribute('aria-selected', 'true'); }
+      if (lockPanel) lockPanel.style.display = '';
+      if (window._lockedMonitorCheckNow) window._lockedMonitorCheckNow();
+    } else if (name === 'm365') {
+      if (tabM365) { tabM365.classList.add('active'); tabM365.setAttribute('aria-selected', 'true'); }
+      if (m365Panel) m365Panel.style.display = '';
+      if (window._m365ActRefreshData) window._m365ActRefreshData();
+    } else if (name === 'computers') {
+      if (tabComputers) { tabComputers.classList.add('active'); tabComputers.setAttribute('aria-selected', 'true'); }
+      if (compPanel) compPanel.style.display = '';
+      if (window._computersRefreshData) window._computersRefreshData();
+    }
+  }
+
+  tabCreate.addEventListener('click',  () => {
+    const win = document.getElementById('mainOSWindow');
+    if (currentTabName === 'create' && win && win.style.display !== 'none') {
+      win.style.display = 'none'; // Minimiza se clicar no app ativo
+    } else {
+      showTab('create');
+    }
+  });
+  
+  tabDisable.addEventListener('click', () => {
+    const win = document.getElementById('mainOSWindow');
+    if (currentTabName === 'disable' && win && win.style.display !== 'none') {
+      win.style.display = 'none';
+    } else {
+      showTab('disable');
+    }
+  });
+
+  if (tabLocked) {
+    tabLocked.addEventListener('click', () => {
+      const win = document.getElementById('mainOSWindow');
+      if (currentTabName === 'locked' && win && win.style.display !== 'none') {
+        win.style.display = 'none';
+      } else {
+        showTab('locked');
+      }
+    });
+  }
+
+  if (tabM365) {
+    tabM365.addEventListener('click', () => {
+      const win = document.getElementById('mainOSWindow');
+      if (currentTabName === 'm365' && win && win.style.display !== 'none') {
+        win.style.display = 'none';
+      } else {
+        showTab('m365');
+      }
+    });
+  }
+
+  if (tabComputers) {
+    tabComputers.addEventListener('click', () => {
+      const win = document.getElementById('mainOSWindow');
+      if (currentTabName === 'computers' && win && win.style.display !== 'none') {
+        win.style.display = 'none';
+      } else {
+        showTab('computers');
+      }
+    });
+  }
+
+  // -- Menu Iniciar e Itens ----------------------------------------
+  const startBtn  = document.getElementById('startBtn');
+  const startMenu = document.getElementById('startMenu');
+
+  function toggleStartMenu(e) {
+    if (e) e.stopPropagation();
+    const isOpen = startMenu.style.display === 'flex';
+    startMenu.style.display = isOpen ? 'none' : 'flex';
+    startBtn.classList.toggle('active', !isOpen);
+  }
+
+  function closeStartMenu() {
+    startMenu.style.display = 'none';
+    startBtn.classList.remove('active');
+  }
+
+  startBtn.addEventListener('click', toggleStartMenu);
+  document.getElementById('menuBtnSystem')?.addEventListener('click', toggleStartMenu);
+
+  // Closes start menu when clicking outside
+  document.addEventListener('click', (e) => {
+    if (startMenu && !startMenu.contains(e.target) && e.target !== startBtn) {
+      closeStartMenu();
+    }
+  });
+
+  // Start Menu Tab Switching
+  document.getElementById('startItemCreate')?.addEventListener('click', () => { showTab('create'); closeStartMenu(); });
+  document.getElementById('startItemDisable')?.addEventListener('click', () => { showTab('disable'); closeStartMenu(); });
+  document.getElementById('startItemLocked')?.addEventListener('click', () => { showTab('locked'); closeStartMenu(); });
+  document.getElementById('startItemComputers')?.addEventListener('click', () => { showTab('computers'); closeStartMenu(); });
+
+  // ── Modais (Ajuda / Sobre) ──────────────────────────────────────
+  const docModal   = document.getElementById('docModal');
+  const aboutModal = document.getElementById('aboutModal');
+
+  function toggleModal(modal, open) {
+    if (modal) modal.style.display = open ? 'flex' : 'none';
+    closeStartMenu();
+  }
+
+  // Help Modal (Documentação)
+  document.getElementById('menuBtnDoc')?.addEventListener('click', () => toggleModal(docModal, true));
+  document.getElementById('startItemHelp')?.addEventListener('click', () => toggleModal(docModal, true));
+  document.getElementById('closeDocModal')?.addEventListener('click', () => toggleModal(docModal, false));
+  document.getElementById('confirmDocModalBtn')?.addEventListener('click', () => toggleModal(docModal, false));
+
+  // About Modal (Sobre)
+  document.getElementById('menuBtnAbout')?.addEventListener('click', () => toggleModal(aboutModal, true));
+  document.getElementById('startItemAbout')?.addEventListener('click', () => toggleModal(aboutModal, true));
+  document.getElementById('closeAboutModal')?.addEventListener('click', () => toggleModal(aboutModal, false));
+  document.getElementById('confirmAboutBtn')?.addEventListener('click', () => toggleModal(aboutModal, false));
+
+  // ── Controles da Janela Clássica ───────────────────────────────
+  const winMinimize = document.getElementById('winMinimizeBtn');
+  const winMaximize = document.getElementById('winMaximizeBtn');
+  const winClose    = document.getElementById('winCloseBtn');
+  const winOS       = document.getElementById('mainOSWindow');
+
+  winMinimize?.addEventListener('click', () => {
+    if (winOS) winOS.style.display = 'none'; // Esconde a janela (minimizar)
+  });
+
+  winMaximize?.addEventListener('click', () => {
+    if (winOS) winOS.classList.toggle('maximized');
+  });
+
+  winClose?.addEventListener('click', () => {
+    window._shutdownSystem();
+  });
+
+  // ── Relógio Digital da System Tray ──────────────────────────────
+  const clockEl = document.getElementById('trayClock');
+  function updateClock() {
+    if (!clockEl) return;
+    const now  = new Date();
+    let hours   = now.getHours();
+    let minutes = now.getMinutes();
+    let seconds = now.getSeconds();
+    
+    hours   = hours < 10 ? '0' + hours : hours;
+    minutes = minutes < 10 ? '0' + minutes : minutes;
+    seconds = seconds < 10 ? '0' + seconds : seconds;
+    
+    clockEl.textContent = hours + ':' + minutes + ':' + seconds;
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  // ── Sequência de Desligamento CRT ───────────────────────────────
+  window._shutdownSystem = function() {
+    closeStartMenu();
+    const shutdownScreen = document.getElementById('shutdownScreen');
+    const winOS = document.getElementById('mainOSWindow');
+    
+    if (winOS && shutdownScreen) {
+      // Aplica animação de colapso CRT na janela principal
+      winOS.classList.add('crt-collapse');
+      
+      // Abre a tela preta com a mensagem amber após o colapso
+      setTimeout(() => {
+        shutdownScreen.style.display = 'flex';
+        winOS.style.display = 'none';
+        winOS.classList.remove('crt-collapse');
+      }, 550);
+    }
+  };
+
+  // Botão desligar da barra de tarefas
+  document.getElementById('trayPowerBtn')?.addEventListener('click', window._shutdownSystem);
+  document.getElementById('startItemShutdown')?.addEventListener('click', window._shutdownSystem);
+
+  // ── Sequência de Boot / Reinício (Mock BIOS) ────────────────────
+  window._rebootSystem = function() {
+    const shutdownScreen = document.getElementById('shutdownScreen');
+    const winOS = document.getElementById('mainOSWindow');
+    
+    if (shutdownScreen && winOS) {
+      shutdownScreen.style.display = 'none';
+      
+      // Cria overlay de BIOS temporário
+      const bios = document.createElement('div');
+      bios.style.position = 'fixed';
+      bios.style.inset = '0';
+      bios.style.backgroundColor = '#000000';
+      bios.style.color = '#ffffff';
+      bios.style.fontFamily = 'monospace';
+      bios.style.fontSize = '12px';
+      bios.style.padding = '20px';
+      bios.style.zIndex = '1000000';
+      bios.style.lineHeight = '1.4';
+      document.body.appendChild(bios);
+
+      const logs = [
+        'AWARD SOFTWARE, INC. © 1999',
+        'PENTIUM III CPU at 500MHz',
+        'Memory Test: 128MB OK',
+        'Detecting IDE Primary Master ... QUANTUM FIREBALL 10.2GB',
+        'Detecting IDE Primary Slave  ... NONE',
+        'S.M.A.R.T. Capable and Status OK',
+        '==================================================',
+        'Booting system from C: drive...',
+        'Loading AD_USER_CREATOR.EXE ... OK',
+        'Loading network drivers ... OK',
+        'Establishing AD loopback tunnel ... OK',
+        'Starting retro graphics adapter ... OK',
+        '==================================================',
+        'Boot sequence completed successfully.'
+      ];
+
+      let idx = 0;
+      function printLine() {
+        if (idx < logs.length) {
+          const l = document.createElement('div');
+          l.textContent = logs[idx++];
+          bios.appendChild(l);
+          bios.scrollTop = bios.scrollHeight;
+          setTimeout(printLine, 80 + Math.random() * 100);
+        } else {
+          setTimeout(() => {
+            if (document.body.contains(bios)) document.body.removeChild(bios);
+            winOS.style.display = 'flex';
+            showTab('create');
+            showToast('Sistema reinicializado! ✓');
+          }, 600);
+        }
+      }
+      printLine();
+    }
+  };
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   DESABILITAR USUÁRIO — Gerador de Script PowerShell
+═══════════════════════════════════════════════════════════════ */
+
+
+function generateDisableScript({ sam, displayName, reason, moveOu, targetOu, expirePassword, removerM365 }) {
+  const timestamp = new Date().toLocaleString('pt-BR');
+  const reasonLine = reason ? `# Motivo  : ${reason}` : '';
+
+  const lines = [
+    `# ================================================================`,
+    `# Script de Desabilitação de Usuário no Active Directory`,
+    `# Gerado em: ${timestamp}`,
+    `# Usuário: ${displayName || sam}`,
+    `...`,
+    `# ================================================================`,
+    ``,
+    `Import-Module ActiveDirectory -ErrorAction Stop`,
+    ``,
+    `# ── Dados do Usuário ────────────────────────────────────────────`,
+    `$SamAccount = "${sam}"`,
+    ...(reason ? [`$Motivo    = "${reason}"`] : []),
+    ``,
+    `# ── Desabilitar conta ───────────────────────────────────────────`,
+    `try {`,
+    `    $User = Get-ADUser -Identity $SamAccount -ErrorAction Stop`,
+    ``,
+    `    # Desabilita a conta`,
+    `    Disable-ADAccount -Identity $SamAccount -ErrorAction Stop`,
+    `    Write-Host "✅ Conta '$SamAccount' desabilitada com sucesso!" -ForegroundColor Green`,
+  ];
+
+  if (expirePassword) {
+    lines.push(
+      ``,
+      `    # Expira a senha imediatamente`,
+      `    Set-ADUser -Identity $SamAccount -PasswordNeverExpires $false -ErrorAction SilentlyContinue`,
+      `    Set-ADUser -Identity $SamAccount -ChangePasswordAtLogon $true -ErrorAction SilentlyContinue`,
+      `    Write-Host "   🔑 Senha expirada — usuário deverá redefinir ao próximo login." -ForegroundColor Cyan`,
+    );
+  }
+
+  if (moveOu && targetOu) {
+    lines.push(
+      ``,
+      `    # Move para OU de desabilitados`,
+      `    $TargetOU = "${targetOu}"`,
+      `    Move-ADObject -Identity $User.DistinguishedName -TargetPath $TargetOU -ErrorAction Stop`,
+      `    Write-Host "   📂 Conta movida para: $TargetOU" -ForegroundColor Cyan`,
+    );
+  }
+
+  if (reason) {
+    lines.push(
+      ``,
+      `    # Registra motivo na descrição da conta`,
+      `    $DataHoje = (Get-Date).ToString("dd/MM/yyyy")`,
+      `    Set-ADUser -Identity $SamAccount -Description "DESABILITADO em $DataHoje - $Motivo" -ErrorAction SilentlyContinue`,
+      `    Write-Host "   📝 Motivo registrado na descrição da conta." -ForegroundColor Cyan`,
+    );
+  }
+
+  if (removerM365) {
+    lines.push(
+      ``,
+      `    # ── Limpeza M365 (Licenças e Grupos) ────────────────────────────`,
+      `    $UPN = $null`,
+      `    try {`,
+      `        $ADUser = Get-ADUser -Identity $SamAccount -Properties UserPrincipalName, EmailAddress`,
+      `        $UPN = if ($ADUser.UserPrincipalName) { $ADUser.UserPrincipalName } else { $ADUser.EmailAddress }`,
+      `    } catch {}`,
+      ``,
+      `    if ($UPN) {`,
+      `        # Microsoft Graph (Licenças e Grupos da Nuvem)`,
+      `        if (Get-Command Get-MgUser -ErrorAction SilentlyContinue) {`,
+      `            try {`,
+      `                Write-Host "   ⚡ Conectando ao Microsoft Graph..." -ForegroundColor Yellow`,
+      `                Connect-MgGraph -Scopes "User.ReadWrite.All", "Organization.Read.All", "Group.ReadWrite.All", "Group.Read.All" -ErrorAction Stop | Out-Null`,
+      `                `,
+      `                $MgUser = Get-MgUser -UserId $UPN -Property "Id,AssignedLicenses" -ErrorAction Stop`,
+      `                $Licenses = @($MgUser.AssignedLicenses)`,
+      `                if ($Licenses.Count -gt 0) {`,
+      `                    $SkuIds = @($Licenses | ForEach-Object { $_.SkuId })`,
+      `                    Write-Host "   ⚡ Removendo $($SkuIds.Count) licença(s) no Graph..." -ForegroundColor Yellow`,
+      `                    Set-MgUserLicense -UserId $UPN -AddLicenses @() -RemoveLicenses $SkuIds -ErrorAction Stop | Out-Null`,
+      `                    Write-Host "      [OK] Licenças M365 removidas!" -ForegroundColor Green`,
+      `                }`,
+      `                `,
+      `                $MgGroups = Get-MgUserMemberOf -UserId $UPN -ErrorAction Stop`,
+      `                $GroupMemberships = @($MgGroups | Where-Object { $_.AdditionalProperties['@odata.type'] -eq '#microsoft.graph.group' -or $_.Id })`,
+      `                if ($GroupMemberships.Count -gt 0) {`,
+      `                    Write-Host "   ⚡ Filtrando grupos de e-mail da nuvem..." -ForegroundColor Yellow`,
+      `                    foreach ($G in $GroupMemberships) {`,
+      `                        $Grp = Get-MgGroup -GroupId $G.Id -Property "Id,DisplayName,MailEnabled,Mail,OnPremisesSyncEnabled" -ErrorAction SilentlyContinue`,
+      `                        if ($Grp) {`,
+      `                            $IsMail = ($Grp.MailEnabled -eq $true -or -not [string]::IsNullOrEmpty($Grp.Mail))`,
+      `                            $IsSynced = ($Grp.OnPremisesSyncEnabled -eq $true)`,
+      `                            if ($IsMail -and -not $IsSynced) {`,
+      `                                try {`,
+      `                                    Remove-MgGroupMemberByRef -GroupId $Grp.Id -DirectoryObjectId $MgUser.Id -ErrorAction Stop | Out-Null`,
+      `                                    Write-Host "      [OK] Removido do grupo de e-mail: $($Grp.DisplayName)" -ForegroundColor Green`,
+      `                                } catch {`,
+      `                                    Write-Host "      [!] Falha ao remover do grupo $($Grp.DisplayName): $_" -ForegroundColor Yellow`,
+      `                                }`,
+      `                            }`,
+      `                        }`,
+      `                    }`,
+      `                }`,
+      `            } catch {`,
+      `                Write-Warning "   [!] Erro nas operações do Microsoft Graph: $_"`,
+      `            }`,
+      `        }`,
+      `        `,
+      `        # Exchange Online (Grupos de Distribuição)`,
+      `        if (Get-Command Get-DistributionGroup -ErrorAction SilentlyContinue) {`,
+      `            try {`,
+      `                Write-Host "   ⚡ Conectando ao Exchange Online..." -ForegroundColor Yellow`,
+      `                Connect-ExchangeOnline -ErrorAction Stop | Out-Null`,
+      `                `,
+      `                $ExGroups = @(Get-DistributionGroup -Member $UPN -ResultSize Unlimited -ErrorAction SilentlyContinue)`,
+      `                if ($ExGroups.Count -gt 0) {`,
+      `                    Write-Host "   ⚡ Filtrando listas de distribuição da nuvem..." -ForegroundColor Yellow`,
+      `                    foreach ($EG in $ExGroups) {`,
+      `                        if ($EG.IsDirSynced -ne $true) {`,
+      `                            try {`,
+      `                                Remove-DistributionGroupMember -Identity $EG.Identity -Member $UPN -Confirm:$false -ErrorAction Stop | Out-Null`,
+      `                                Write-Host "      [OK] Removido da lista Exchange: $($EG.DisplayName)" -ForegroundColor Green`,
+      `                            } catch {`,
+      `                                Write-Host "      [!] Falha ao remover da lista Exchange $($EG.DisplayName): $_" -ForegroundColor Yellow`,
+      `                            }`,
+      `                        }`,
+      `                    }`,
+      `                }`,
+      `            } catch {`,
+      `                Write-Warning "   [!] Erro nas operações do Exchange Online: $_"`,
+      `            }`,
+      `        }`,
+      `    }`,
+    );
+  }
+
+  lines.push(
+    ``,
+    `    Write-Host ""`,
+    `    Write-Host "✅ Operação concluída!" -ForegroundColor Green`,
+    ``,
+    `} catch {`,
+    `    Write-Error "❌ Falha ao desabilitar '$SamAccount': $_"`,
+    `    exit 1`,
+    `}`,
+  );
+
+  return lines.join('\n');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DESABILITAR USUÁRIO — Autocomplete de busca
+═══════════════════════════════════════════════════════════════ */
+(function () {
+  const searchEl   = document.getElementById('disableUserSearch');
+  const clearEl    = document.getElementById('clearDisableUser');
+  const dropEl     = document.getElementById('disableUserDropdown');
+  const chipEl     = document.getElementById('disableUserChip');
+  const avatarEl   = document.getElementById('disableChipAvatar');
+  const nameEl     = document.getElementById('disableChipName');
+  const metaEl     = document.getElementById('disableChipMeta');
+  const statusEl   = document.getElementById('disableChipStatus');
+  const removeEl   = document.getElementById('removeDisableUser');
+  const hiddenEl   = document.getElementById('disableUserSam');
+  const genBtn     = document.getElementById('generateDisableBtn');
+
+  if (!searchEl) return;
+
+  let debounceTimer = null;
+  let selectedUser  = null;
+
+  function getUsers() {
+    return (window.AD_DATA && window.AD_DATA.users) ? window.AD_DATA.users : [];
+  }
+
+  function getInitials(name) {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  function hlText(text, term) {
+    if (!term || !text) return text;
+    const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const tNorm = normalize(term);
+    const txtNorm = normalize(text);
+    const idx = txtNorm.indexOf(tNorm);
+    if (idx === -1) return text;
+    return text.substring(0, idx) + '<mark>' + text.substring(idx, idx + term.length) + '</mark>' + text.substring(idx + term.length);
+  }
+
+  function filterUsers(term) {
+    const normalize = s => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
+    const t = normalize(term);
+    return getUsers().filter(u =>
+      normalize(u.samAccountName).includes(t) ||
+      normalize(u.displayName).includes(t)    ||
+      normalize(u.name).includes(t)           ||
+      normalize(u.department).includes(t)
+    ).slice(0, 12);
+  }
+
+  function renderDrop(results, term) {
+    dropEl.innerHTML = '';
+    if (!results.length) {
+      dropEl.innerHTML = `
+        <div class="user-dropdown-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          Nenhum usuário encontrado
+        </div>`;
+      dropEl.style.display = 'block';
+      return;
+    }
+    results.forEach(u => {
+      const item = document.createElement('div');
+      item.className = 'user-dropdown-item';
+      const initials = getInitials(u.displayName || u.samAccountName);
+      const isDisabled = u.enabled === false;
+      item.innerHTML = `
+        <div class="user-dropdown-avatar" style="${isDisabled ? 'background:linear-gradient(135deg,#6b7280,#9ca3af)' : ''}">${initials}</div>
+        <div class="user-dropdown-info">
+          <div class="user-dropdown-name">${hlText(u.displayName || u.samAccountName, term)}
+            ${isDisabled ? '<span style="font-size:10px;background:#ef444420;color:#ef4444;border:1px solid #ef444430;border-radius:99px;padding:1px 7px;margin-left:6px;">Já desabilitado</span>' : ''}
+          </div>
+          <div class="user-dropdown-meta">
+            <span class="user-dropdown-sam">${hlText(u.samAccountName, term)}</span>
+            ${u.department ? `<span class="user-dropdown-dept">${u.department}</span>` : ''}
+            ${u.title ? `<span class="user-dropdown-dept">${u.title}</span>` : ''}
+          </div>
+        </div>`;
+      item.addEventListener('mousedown', e => { e.preventDefault(); selectUser(u); });
+      dropEl.appendChild(item);
+    });
+    dropEl.style.display = 'block';
+  }
+
+  function selectUser(u) {
+    selectedUser = u;
+    hiddenEl.value = u.samAccountName;
+
+    const initials = getInitials(u.displayName || u.samAccountName);
+    avatarEl.textContent = initials;
+    nameEl.textContent   = u.displayName || u.samAccountName;
+    metaEl.textContent   = u.samAccountName
+      + (u.department ? ` · ${u.department}` : '')
+      + (u.title ? ` · ${u.title}` : '');
+
+    const isDisabled = u.enabled === false;
+    statusEl.textContent  = isDisabled ? '● Já desabilitado' : '● Conta ativa';
+    statusEl.className    = 'disable-chip-status ' +
+      (isDisabled ? 'disable-status-disabled' : 'disable-status-enabled');
+
+    chipEl.style.display   = 'flex';
+    searchEl.value         = '';
+    clearEl.style.display  = 'none';
+    dropEl.style.display   = 'none';
+
+    // Habilita o botão de gerar script
+    genBtn.disabled = false;
+  }
+
+  function clearSelection() {
+    selectedUser         = null;
+    hiddenEl.value       = '';
+    chipEl.style.display = 'none';
+    searchEl.value       = '';
+    clearEl.style.display = 'none';
+    genBtn.disabled      = true;
+  }
+
+  searchEl.addEventListener('input', function () {
+    const term = this.value.trim();
+    clearEl.style.display = term ? 'flex' : 'none';
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      if (term.length < 2) { dropEl.style.display = 'none'; return; }
+      const users = getUsers();
+      if (!users.length) {
+        // Sem AD_DATA: permite digitar o SAM manualmente
+        hiddenEl.value = term;
+        dropEl.innerHTML = `
+          <div class="user-dropdown-manual">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            AD não conectado — usando <strong>${term}</strong> como SAM
+          </div>`;
+        dropEl.style.display = 'block';
+        genBtn.disabled = false;
+        return;
+      }
+      renderDrop(filterUsers(term), term);
+    }, 200);
+  });
+
+  searchEl.addEventListener('focus', function () {
+    const term = this.value.trim();
+    if (term.length >= 2) renderDrop(filterUsers(term), term);
+  });
+
+  searchEl.addEventListener('blur', () => setTimeout(() => { dropEl.style.display = 'none'; }, 150));
+
+  searchEl.addEventListener('keydown', function (e) {
+    const items  = dropEl.querySelectorAll('.user-dropdown-item');
+    const active = dropEl.querySelector('.user-dropdown-item.focused');
+    if (e.key === 'Escape') { dropEl.style.display = 'none'; return; }
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = active ? active.nextElementSibling : items[0];
+      active?.classList.remove('focused');
+      if (next?.classList.contains('user-dropdown-item')) next.classList.add('focused');
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = active?.previousElementSibling;
+      active?.classList.remove('focused');
+      if (prev?.classList.contains('user-dropdown-item')) prev.classList.add('focused');
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (active) {
+        const idx = [...items].indexOf(active);
+        const term = searchEl.value.trim();
+        const results = filterUsers(term);
+        if (results[idx]) selectUser(results[idx]);
+      }
+    }
+  });
+
+  clearEl.addEventListener('click', () => {
+    searchEl.value = '';
+    clearEl.style.display = 'none';
+    dropEl.style.display  = 'none';
+    hiddenEl.value = '';
+  });
+  removeEl.addEventListener('click', clearSelection);
+
+  /* ── Toggle da linha de OU de destino ── */
+  document.getElementById('disableMoveOu').addEventListener('change', function () {
+    document.getElementById('disableOuRow').style.display = this.checked ? 'block' : 'none';
+  });
+
+  /* ── Gerar Script ── */
+  document.getElementById('generateDisableBtn').addEventListener('click', function () {
+    const sam = hiddenEl.value.trim();
+    if (!sam) { showToast('Selecione um usuário primeiro.', '#f59e0b'); return; }
+
+    const displayName    = selectedUser ? (selectedUser.displayName || sam) : sam;
+    const reason         = document.getElementById('disableReason').value.trim();
+    const moveOu         = document.getElementById('disableMoveOu').checked;
+    const targetOu       = document.getElementById('disableOuSelect').value.trim();
+    const expirePassword = document.getElementById('disableExpirePassword').checked;
+    const removerM365    = document.getElementById('disableRemoveLicensesM365').checked;
+
+    const script = generateDisableScript({ sam, displayName, reason, moveOu, targetOu, expirePassword, removerM365 });
+
+    const scriptCodeEl = document.getElementById('disableScriptCode');
+    const scriptOutEl  = document.getElementById('disableScriptOutput');
+    const emptyEl      = document.getElementById('disableEmptyState');
+    const actionsEl    = document.getElementById('disableOutputActions');
+    const summaryEl    = document.getElementById('disableSummary');
+    const summaryGrid  = document.getElementById('disableSummaryGrid');
+
+    scriptCodeEl.innerHTML = highlight(script);
+    scriptOutEl.style.display  = 'block';
+    emptyEl.style.display      = 'none';
+    actionsEl.style.display    = 'flex';
+
+    // Summary
+    summaryGrid.innerHTML = [
+      { k: 'Usuário (SAM)',    v: sam },
+      { k: 'Nome Completo',   v: displayName },
+      { k: 'Expirar Senha',   v: expirePassword ? 'Sim' : 'Não' },
+      { k: 'Mover para OU',   v: (moveOu && targetOu) ? targetOu : 'Não' },
+      { k: 'Limpar M365 (Nuvem)', v: removerM365 ? 'Sim' : 'Não' },
+      ...(reason ? [{ k: 'Motivo', v: reason }] : []),
+    ].map(i => `
+      <div class="summary-item">
+        <div class="s-key">${i.k}</div>
+        <div class="s-val">${i.v}</div>
+      </div>
+    `).join('');
+    summaryEl.style.display = 'block';
+
+    // Armazena script PS1 (copiar/baixar) e dados JSON (executar via API)
+    document.getElementById('copyDisableScriptBtn')._script = script;
+    document.getElementById('downloadDisableBtn')._script   = script;
+    document.getElementById('downloadDisableBtn')._filename = `desabilitar_${sam}.ps1`;
+    document.getElementById('executeDisableBtn')._disableData = {
+      sam          : sam,
+      motivo       : reason,
+      moverOu      : moveOu,
+      ouDestino    : targetOu,
+      expirarSenha : expirePassword,
+      removerM365  : removerM365,
+    };
+
+    showToast('Script de desabilitação gerado! ✓');
+  });
+
+  document.getElementById('copyDisableScriptBtn').addEventListener('click', function () {
+    if (this._script) copyText(this._script);
+  });
+  document.getElementById('downloadDisableBtn').addEventListener('click', function () {
+    if (this._script) downloadPS1(this._script, this._filename || 'desabilitar_usuario.ps1');
+  });
+
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   SERVIDOR LOCAL — Integração da aba Desabilitar
+   Usa POST /api/desabilitar com JSON estruturado.
+═══════════════════════════════════════════════════════════════ */
+(function () {
+  const execBtn       = document.getElementById('executeDisableBtn');
+  const terminalPanel = document.getElementById('disableTerminalPanel');
+  const terminalOut   = document.getElementById('disableTerminalOutput');
+  const terminalSt    = document.getElementById('disableTerminalStatus');
+
+  // Atualiza visibilidade do botão conforme disponibilidade do servidor
+  function syncBtn() {
+    if (!execBtn) return;
+    const online = !!window._serverToken;
+    execBtn.style.display = online ? 'flex' : 'none';
+  }
+
+  if (execBtn) {
+    execBtn.addEventListener('click', async () => {
+      const disableData = execBtn._disableData;
+      if (!disableData) { showToast('Gere o script primeiro.', '#f59e0b'); return; }
+
+      const result = await window._chamarEndpoint(
+        '/api/desabilitar', 'POST', disableData,
+        terminalPanel, terminalOut, terminalSt
+      );
+      if (result && result.success) showToast('Conta desabilitada com sucesso! ✓');
+    });
+  }
+
+  document.getElementById('disableTerminalClearBtn')?.addEventListener('click', () => {
+    terminalOut.innerHTML = '';
+    terminalPanel.style.display = 'none';
+  });
+
+  // Sincroniza botão quando o token atualizar
+  syncBtn();
+  setInterval(syncBtn, 3000);
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   DESABILITAR — SUB-ABAS (Individual / Em Lote)
+═══════════════════════════════════════════════════════════════ */
+(function () {
+  const btnSingle = document.getElementById('disSubBtnSingle');
+  const btnBulk   = document.getElementById('disSubBtnBulk');
+  const panelSingle = document.getElementById('disSubPanelSingle');
+  const panelBulk   = document.getElementById('disSubPanelBulk');
+
+  if (!btnSingle || !btnBulk) return;
+
+  function showSub(name) {
+    if (name === 'single') {
+      btnSingle.classList.add('active');
+      btnBulk.classList.remove('active');
+      panelSingle.style.display = '';
+      panelBulk.style.display   = 'none';
+    } else {
+      btnBulk.classList.add('active');
+      btnSingle.classList.remove('active');
+      panelBulk.style.display   = '';
+      panelSingle.style.display = 'none';
+    }
+  }
+
+  btnSingle.addEventListener('click', () => showSub('single'));
+  btnBulk.addEventListener('click',   () => showSub('bulk'));
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   DESABILITAR EM LOTE — Script Generator
+═══════════════════════════════════════════════════════════════ */
+
+
+function generateBulkDisableScript(users, reason, moveOu, targetOu, expirePassword, removerM365) {
+  const timestamp = new Date().toLocaleString('pt-BR');
+
+  const lines = [
+    `# ================================================================`,
+    `# Script de Desabilitação em LOTE no Active Directory`,
+    `# Gerado em: ${timestamp}`,
+    `# Total de contas: ${users.length}`,
+    ...(reason ? [`# Motivo  : ${reason}`] : []),
+    `# ================================================================`,
+    ``,
+    `Import-Module ActiveDirectory -ErrorAction Stop`,
+    ``,
+    `# ── Lista de usuários ───────────────────────────────────────────`,
+    `$Usuarios = @(`,
+    ...users.map((u, i) => {
+      const comma = i < users.length - 1 ? ',' : '';
+      return `    "${u.sam}"${comma}    # ${u.displayName || u.sam}`;
+    }),
+    `)`,
+    ``,
+    ...(reason ? [`$Motivo = "${reason}"`] : []),
+    ...(moveOu && targetOu ? [`$TargetOU = "${targetOu}"`] : []),
+    ``,
+    `# ── Processar cada usuário ──────────────────────────────────────`,
+    `$Sucesso = 0`,
+    `$Falha   = 0`,
+    ``,
+    `foreach ($Sam in $Usuarios) {`,
+    `    Write-Host ""`,
+    `    Write-Host "▶ Processando: $Sam" -ForegroundColor Cyan`,
+    `    try {`,
+    `        $User = Get-ADUser -Identity $Sam -Properties UserPrincipalName, EmailAddress -ErrorAction Stop`,
+    ``,
+    `        # Desabilitar conta`,
+    `        Disable-ADAccount -Identity $Sam -ErrorAction Stop`,
+    `        Write-Host "  ✅ Conta desabilitada." -ForegroundColor Green`,
+  ];
+
+  if (expirePassword) {
+    lines.push(
+      ``,
+      `        # Expirar senha`,
+      `        Set-ADUser -Identity $Sam -PasswordNeverExpires $false -ErrorAction SilentlyContinue`,
+      `        Set-ADUser -Identity $Sam -ChangePasswordAtLogon $true -ErrorAction SilentlyContinue`,
+      `        Write-Host "  🔑 Senha expirada." -ForegroundColor Cyan`,
+    );
+  }
+
+  if (moveOu && targetOu) {
+    lines.push(
+      ``,
+      `        # Mover para OU de desabilitados`,
+      `        Move-ADObject -Identity $User.DistinguishedName -TargetPath $TargetOU -ErrorAction Stop`,
+      `        Write-Host "  📂 Movido para: $TargetOU" -ForegroundColor Cyan`,
+    );
+  }
+
+  if (reason) {
+    lines.push(
+      ``,
+      `        # Registrar motivo na descrição`,
+      `        $DataHoje = (Get-Date).ToString("dd/MM/yyyy")`,
+      `        Set-ADUser -Identity $Sam -Description "DESABILITADO em $DataHoje - $Motivo" -ErrorAction SilentlyContinue`,
+      `        Write-Host "  📝 Motivo registrado." -ForegroundColor Cyan`,
+    );
+  }
+
+  if (removerM365) {
+    lines.push(
+      ``,
+      `        # Limpeza M365 (Licenças e Grupos da Nuvem)`,
+      `        $UPN = if ($User.UserPrincipalName) { $User.UserPrincipalName } else { $User.EmailAddress }`,
+      `        if ($UPN) {`,
+      `            # Microsoft Graph`,
+      `            if (Get-Command Get-MgUser -ErrorAction SilentlyContinue) {`,
+      `                try {`,
+      `                    Connect-MgGraph -Scopes "User.ReadWrite.All", "Organization.Read.All", "Group.ReadWrite.All", "Group.Read.All" -ErrorAction Stop | Out-Null`,
+      `                    $MgUser = Get-MgUser -UserId $UPN -Property "Id,AssignedLicenses" -ErrorAction Stop`,
+      `                    $Licenses = @($MgUser.AssignedLicenses)`,
+      `                    if ($Licenses.Count -gt 0) {`,
+      `                        $SkuIds = @($Licenses | ForEach-Object { $_.SkuId })`,
+      `                        Set-MgUserLicense -UserId $UPN -AddLicenses @() -RemoveLicenses $SkuIds -ErrorAction Stop | Out-Null`,
+      `                        Write-Host "  ⚡ M365: Licenças removidas." -ForegroundColor Green`,
+      `                    }`,
+      `                    $MgGroups = Get-MgUserMemberOf -UserId $UPN -ErrorAction Stop`,
+      `                    $GroupMemberships = @($MgGroups | Where-Object { $_.AdditionalProperties['@odata.type'] -eq '#microsoft.graph.group' -or $_.Id })`,
+      `                    if ($GroupMemberships.Count -gt 0) {`,
+      `                        foreach ($G in $GroupMemberships) {`,
+      `                            $Grp = Get-MgGroup -GroupId $G.Id -Property "Id,DisplayName,MailEnabled,Mail,OnPremisesSyncEnabled" -ErrorAction SilentlyContinue`,
+      `                            if ($Grp) {`,
+      `                                $IsMail = ($Grp.MailEnabled -eq $true -or -not [string]::IsNullOrEmpty($Grp.Mail))`,
+      `                                $IsSynced = ($Grp.OnPremisesSyncEnabled -eq $true)`,
+      `                                if ($IsMail -and -not $IsSynced) {`,
+      `                                    Remove-MgGroupMemberByRef -GroupId $Grp.Id -DirectoryObjectId $MgUser.Id -ErrorAction SilentlyContinue | Out-Null`,
+      `                                }`,
+      `                            }`,
+      `                        }`,
+      `                        Write-Host "  ⚡ M365: Removido dos grupos de e-mail da nuvem." -ForegroundColor Green`,
+      `                    }`,
+      `                } catch {`,
+      `                    Write-Host "  [!] Erro no Graph para $UPN: $_" -ForegroundColor Yellow`,
+      `                }`,
+      `            }`,
+      `            # Exchange Online`,
+      `            if (Get-Command Get-DistributionGroup -ErrorAction SilentlyContinue) {`,
+      `                try {`,
+      `                    Connect-ExchangeOnline -ErrorAction Stop | Out-Null`,
+      `                    $ExGroups = @(Get-DistributionGroup -Member $UPN -ResultSize Unlimited -ErrorAction SilentlyContinue)`,
+      `                    if ($ExGroups.Count -gt 0) {`,
+      `                        foreach ($EG in $ExGroups) {`,
+      `                            if ($EG.IsDirSynced -ne $true) {`,
+      `                                Remove-DistributionGroupMember -Identity $EG.Identity -Member $UPN -Confirm:$false -ErrorAction SilentlyContinue | Out-Null`,
+      `                            }`,
+      `                        }`,
+      `                        Write-Host "  ⚡ Exchange: Removido das listas de distribuição da nuvem." -ForegroundColor Green`,
+      `                    }`,
+      `                } catch {`,
+      `                    Write-Host "  [!] Erro no Exchange para $UPN: $_" -ForegroundColor Yellow`,
+      `                }`,
+      `            }`,
+      `        }`,
+    );
+  }
+
+  lines.push(
+    ``,
+    `        $Sucesso++`,
+    `    } catch {`,
+    `        Write-Warning "  ❌ Falha em '$Sam': $_"`,
+    `        $Falha++`,
+    `    }`,
+    `}`,
+    ``,
+    `# ── Resumo final ────────────────────────────────────────────────`,
+    `Write-Host ""`,
+    `Write-Host "═══════════════════════════════════" -ForegroundColor DarkGray`,
+    `Write-Host "✅ Concluídos com sucesso : $Sucesso" -ForegroundColor Green`,
+    `if ($Falha -gt 0) {`,
+    `    Write-Host "❌ Com falha             : $Falha" -ForegroundColor Red`,
+    `}`,
+    `Write-Host "═══════════════════════════════════" -ForegroundColor DarkGray`,
+  );
+
+  return lines.join('\n');
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   DESABILITAR EM LOTE — UI: busca + lista + gerar script
+═══════════════════════════════════════════════════════════════ */
+(function () {
+  const searchEl    = document.getElementById('disableBulkSearch');
+  const clearEl     = document.getElementById('clearDisableBulkSearch');
+  const dropEl      = document.getElementById('disableBulkDropdown');
+  const listWrap    = document.getElementById('disableBulkListWrap');
+  const listEl      = document.getElementById('disableBulkList');
+  const listLabel   = document.getElementById('disableBulkListLabel');
+  const clearAllEl  = document.getElementById('disableBulkClearAll');
+  const countBadge  = document.getElementById('disableBulkCount');
+  const genBtn      = document.getElementById('generateBulkDisableBtn');
+
+  if (!searchEl) return;
+
+  // Conjunto de usuários adicionados: Map<sam → userObj>
+  const queueMap = new Map();
+
+  function getUsers() {
+    return (window.AD_DATA && window.AD_DATA.users) ? window.AD_DATA.users : [];
+  }
+
+  function getInitials(name) {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  function hlText(text, term) {
+    if (!term) return text;
+    const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return text.replace(new RegExp(`(${esc})`, 'gi'), '<mark>$1</mark>');
+  }
+
+  function filterUsers(term) {
+    const t = term.toLowerCase();
+    return getUsers().filter(u =>
+      (u.samAccountName && u.samAccountName.toLowerCase().includes(t)) ||
+      (u.displayName    && u.displayName.toLowerCase().includes(t))    ||
+      (u.department     && u.department.toLowerCase().includes(t))
+    ).slice(0, 12);
+  }
+
+  /* ── Renderiza dropdown de busca ── */
+  function renderDrop(results, term) {
+    dropEl.innerHTML = '';
+    if (!results.length) {
+      dropEl.innerHTML = `
+        <div class="user-dropdown-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          Nenhum usuário encontrado
+        </div>`;
+      dropEl.style.display = 'block';
+      return;
+    }
+    results.forEach(u => {
+      const sam = u.samAccountName;
+      const alreadyAdded = queueMap.has(sam);
+      const isDisabled   = u.enabled === false;
+
+      const item = document.createElement('div');
+      item.className = 'user-dropdown-item';
+      if (alreadyAdded) item.style.opacity = '.45';
+
+      const initials = getInitials(u.displayName || sam);
+      item.innerHTML = `
+        <div class="user-dropdown-avatar" style="${isDisabled ? 'background:linear-gradient(135deg,#6b7280,#9ca3af)' : ''}">${initials}</div>
+        <div class="user-dropdown-info">
+          <div class="user-dropdown-name">
+            ${hlText(u.displayName || sam, term)}
+            ${isDisabled  ? '<span style="font-size:10px;background:#ef444420;color:#ef4444;border:1px solid #ef444430;border-radius:99px;padding:1px 7px;margin-left:6px;">Já desabilitado</span>' : ''}
+            ${alreadyAdded ? '<span style="font-size:10px;background:#10b98118;color:#10b981;border:1px solid #10b98130;border-radius:99px;padding:1px 7px;margin-left:6px;">Na lista</span>' : ''}
+          </div>
+          <div class="user-dropdown-meta">
+            <span class="user-dropdown-sam">${hlText(sam, term)}</span>
+            ${u.department ? `<span class="user-dropdown-dept">${u.department}</span>` : ''}
+          </div>
+        </div>`;
+      item.addEventListener('mousedown', e => {
+        e.preventDefault();
+        if (!alreadyAdded) addToQueue(u);
+        else showToast(`${sam} já está na lista.`, '#f59e0b');
+        searchEl.value = '';
+        clearEl.style.display = 'none';
+        dropEl.style.display  = 'none';
+      });
+      dropEl.appendChild(item);
+    });
+    dropEl.style.display = 'block';
+  }
+
+  /* ── Adiciona usuário à fila ── */
+  function addToQueue(u) {
+    const sam = u.samAccountName;
+    if (queueMap.has(sam)) return;
+    queueMap.set(sam, u);
+    renderList();
+    updateCounters();
+    showToast(`${u.displayName || sam} adicionado! ✓`);
+  }
+
+  /* ── Remove usuário da fila ── */
+  function removeFromQueue(sam) {
+    queueMap.delete(sam);
+    renderList();
+    updateCounters();
+  }
+
+  /* ── Atualiza contadores e estado do botão ── */
+  function updateCounters() {
+    const n = queueMap.size;
+    listLabel.textContent  = `${n} usuário${n !== 1 ? 's' : ''} na fila`;
+    countBadge.textContent = n;
+    countBadge.style.display = n > 0 ? 'inline-flex' : 'none';
+    genBtn.disabled = n === 0;
+    listWrap.style.display = n > 0 ? '' : 'none';
+  }
+
+  /* ── Renderiza itens da lista ── */
+  function renderList() {
+    listEl.innerHTML = '';
+    queueMap.forEach((u, sam) => {
+      const isDisabled = u.enabled === false;
+      const initials   = getInitials(u.displayName || sam);
+
+      const item = document.createElement('div');
+      item.className = 'disable-bulk-item';
+      item.innerHTML = `
+        <div class="disable-bulk-item-avatar">${initials}</div>
+        <div class="disable-bulk-item-info">
+          <div class="disable-bulk-item-name">${u.displayName || sam}</div>
+          <div class="disable-bulk-item-sam">${sam}${u.department ? ' · ' + u.department : ''}</div>
+        </div>
+        <span class="disable-bulk-item-status ${isDisabled ? 'disable-status-disabled' : 'disable-status-enabled'}">
+          ${isDisabled ? '● Já desabilitado' : '● Ativa'}
+        </span>
+        <button class="disable-bulk-item-remove" title="Remover da lista">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>`;
+      item.querySelector('.disable-bulk-item-remove').addEventListener('click', () => removeFromQueue(sam));
+      listEl.appendChild(item);
+    });
+  }
+
+  /* ── Eventos de busca ── */
+  let debounce;
+  searchEl.addEventListener('input', function () {
+    const term = this.value.trim();
+    clearEl.style.display = term ? 'flex' : 'none';
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      if (term.length < 2) { dropEl.style.display = 'none'; return; }
+      const users = getUsers();
+      if (!users.length) {
+        // Sem AD: permite digitar SAM manualmente e adicionar
+        dropEl.innerHTML = `
+          <div class="user-dropdown-manual" style="cursor:pointer;" id="bulkManualAdd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            AD não conectado — clique para adicionar <strong>${term}</strong> como SAM
+          </div>`;
+        const el = document.getElementById('bulkManualAdd');
+        if (el) el.addEventListener('mousedown', e => {
+          e.preventDefault();
+          addToQueue({ samAccountName: term, displayName: term, enabled: true });
+          searchEl.value = '';
+          clearEl.style.display = 'none';
+          dropEl.style.display  = 'none';
+        });
+        dropEl.style.display = 'block';
+        return;
+      }
+      renderDrop(filterUsers(term), term);
+    }, 200);
+  });
+
+  searchEl.addEventListener('focus', function () {
+    const term = this.value.trim();
+    if (term.length >= 2) renderDrop(filterUsers(term), term);
+  });
+  searchEl.addEventListener('blur', () => setTimeout(() => { dropEl.style.display = 'none'; }, 150));
+
+  searchEl.addEventListener('keydown', function (e) {
+    const items  = dropEl.querySelectorAll('.user-dropdown-item');
+    const active = dropEl.querySelector('.user-dropdown-item.focused');
+    if (e.key === 'Escape') { dropEl.style.display = 'none'; return; }
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = active ? active.nextElementSibling : items[0];
+      active?.classList.remove('focused');
+      if (next?.classList.contains('user-dropdown-item')) next.classList.add('focused');
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = active?.previousElementSibling;
+      active?.classList.remove('focused');
+      if (prev?.classList.contains('user-dropdown-item')) prev.classList.add('focused');
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (active) {
+        const idx = [...items].indexOf(active);
+        const results = filterUsers(searchEl.value.trim());
+        if (results[idx] && !queueMap.has(results[idx].samAccountName))
+          addToQueue(results[idx]);
+      }
+    }
+  });
+
+  clearEl.addEventListener('click', () => {
+    searchEl.value = '';
+    clearEl.style.display = 'none';
+    dropEl.style.display  = 'none';
+  });
+
+  clearAllEl.addEventListener('click', () => {
+    if (!queueMap.size) return;
+    if (confirm(`Remover todos os ${queueMap.size} usuários da lista?`)) {
+      queueMap.clear();
+      renderList();
+      updateCounters();
+    }
+  });
+
+  /* ── Toggle OU row ── */
+  document.getElementById('disableBulkMoveOu').addEventListener('change', function () {
+    document.getElementById('disableBulkOuRow').style.display = this.checked ? 'block' : 'none';
+  });
+
+  /* ── Importação Inteligente (Desabilitar em Lote) ── */
+  const smartToggle = document.getElementById('disableBulkSmartToggle');
+  const smartBody   = document.getElementById('disableBulkSmartBody');
+  const smartCaret  = document.getElementById('disableBulkSmartCaret');
+  const smartText   = document.getElementById('disableBulkSmartText');
+  const smartBtn    = document.getElementById('disableBulkProcessSmartBtn');
+  const smartClear  = document.getElementById('disableBulkClearSmartBtn');
+  const smartRes    = document.getElementById('disableBulkSmartResult');
+
+  if (smartToggle) {
+    smartToggle.addEventListener('click', function () {
+      const open = smartBody.style.display !== 'none';
+      smartBody.style.display = open ? 'none' : 'block';
+      smartCaret.style.transform = open ? '' : 'rotate(180deg)';
+      this.classList.toggle('smart-import-toggle-open', !open);
+    });
+  }
+
+  if (smartBtn) {
+    smartBtn.addEventListener('click', function () {
+      const raw = smartText.value.trim();
+      if (!raw) { showToast('Cole o texto antes de processar.', '#f59e0b'); return; }
+
+      const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+      let added = 0;
+      let notFound = 0;
+      let notFoundList = [];
+
+      const allUsers = getUsers();
+
+      lines.forEach(line => {
+        const term = line.toLowerCase();
+        const found = allUsers.find(u => 
+          (u.samAccountName && u.samAccountName.toLowerCase() === term) ||
+          (u.userPrincipalName && u.userPrincipalName.toLowerCase() === term) ||
+          (u.displayName && u.displayName.toLowerCase() === term) ||
+          (u.mail && u.mail.toLowerCase() === term)
+        );
+
+        if (found) {
+          if (!queueMap.has(found.samAccountName)) {
+            queueMap.set(found.samAccountName, found);
+            added++;
+          }
+        } else {
+          notFound++;
+          notFoundList.push(line);
+        }
+      });
+
+      renderList();
+
+      if (added > 0) {
+        showToast(`${added} usuário(s) adicionado(s) à fila. ✓`);
+        smartText.value = '';
+        if (notFound > 0) {
+          smartRes.innerHTML = `<div style="color:#ef4444; margin-top:8px;">⚠️ ${notFound} linha(s) não encontrada(s) no AD (veja console).</div>`;
+          smartRes.style.display = 'block';
+          console.warn('Usuários não encontrados (Lote Desabilitação):', notFoundList);
+        } else {
+          smartRes.style.display = 'none';
+          smartBody.style.display = 'none';
+          smartCaret.style.transform = '';
+          smartToggle.classList.remove('smart-import-toggle-open');
+        }
+      } else {
+        showToast('Nenhum usuário correspondente encontrado no AD.', '#ef4444');
+        if (notFound > 0) {
+          smartRes.innerHTML = `<div style="color:#ef4444; margin-top:8px;">⚠️ ${notFound} linha(s) não encontrada(s) no AD.</div>`;
+          smartRes.style.display = 'block';
+        }
+      }
+    });
+  }
+
+  if (smartClear) {
+    smartClear.addEventListener('click', () => {
+      smartText.value = '';
+      smartRes.style.display = 'none';
+    });
+  }
+
+  /* ── Gerar script em lote ── */
+  genBtn.addEventListener('click', () => {
+    if (!queueMap.size) { showToast('Adicione pelo menos um usuário.', '#f59e0b'); return; }
+
+    const users        = [...queueMap.values()].map(u => ({ sam: u.samAccountName, displayName: u.displayName }));
+    const reason       = document.getElementById('disableBulkReason').value.trim();
+    const moveOu       = document.getElementById('disableBulkMoveOu').checked;
+    const targetOu     = document.getElementById('disableBulkOuSelect').value.trim();
+    const expirePw     = document.getElementById('disableBulkExpire').checked;
+    const removerM365  = document.getElementById('disableBulkRemoveLicensesM365').checked;
+
+    const script = generateBulkDisableScript(users, reason, moveOu, targetOu, expirePw, removerM365);
+
+    const codeEl     = document.getElementById('disableBulkScriptCode');
+    const outputEl   = document.getElementById('disableBulkScriptOutput');
+    const emptyEl    = document.getElementById('disableBulkEmptyState');
+    const actionsEl  = document.getElementById('disableBulkOutputActions');
+    const summaryEl  = document.getElementById('disableBulkSummary');
+    const summaryGrid= document.getElementById('disableBulkSummaryGrid');
+
+    codeEl.innerHTML         = highlight(script);
+    outputEl.style.display   = 'block';
+    emptyEl.style.display    = 'none';
+    actionsEl.style.display  = 'flex';
+
+    // Summary
+    summaryGrid.innerHTML = [
+      { k: 'Total de contas',  v: `${users.length} usuários` },
+      { k: 'Expirar Senha',    v: expirePw ? 'Sim' : 'Não' },
+      { k: 'Mover para OU',    v: (moveOu && targetOu) ? targetOu : 'Não' },
+      { k: 'Limpar M365 (Nuvem)', v: removerM365 ? 'Sim' : 'Não' },
+      ...(reason ? [{ k: 'Motivo Global', v: reason }] : []),
+      { k: 'Usuários', v: users.map(u => u.sam).join(', ') },
+    ].map(i => `
+      <div class="summary-item">
+        <div class="s-key">${i.k}</div>
+        <div class="s-val" style="word-break:break-all">${i.v}</div>
+      </div>`).join('');
+    summaryEl.style.display = 'block';
+
+    document.getElementById('copyDisableBulkBtn')._script    = script;
+    document.getElementById('downloadDisableBulkBtn')._script = script;
+    document.getElementById('downloadDisableBulkBtn')._filename = `desabilitar_lote_${users.length}usuarios.ps1`;
+    document.getElementById('executeDisableBulkBtn')._loteData  = {
+      usuarios     : users.map(u => ({ sam: u.sam })),
+      motivo       : reason,
+      moverOu      : moveOu,
+      ouDestino    : targetOu,
+      expirarSenha : expirePw,
+      removerM365  : removerM365,
+    };
+
+    showToast(`Script gerado para ${users.length} usuário(s)! ✓`);
+  });
+
+  document.getElementById('copyDisableBulkBtn').addEventListener('click', function () {
+    if (this._script) copyText(this._script);
+  });
+  document.getElementById('downloadDisableBulkBtn').addEventListener('click', function () {
+    if (this._script) downloadPS1(this._script, this._filename || 'desabilitar_lote.ps1');
+  });
+
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   SERVIDOR LOCAL — Integração Desabilitar em Lote
+   Usa POST /api/desabilitar-lote com JSON estruturado.
+═══════════════════════════════════════════════════════════════ */
+(function () {
+  const execBtn  = document.getElementById('executeDisableBulkBtn');
+  const termPanel = document.getElementById('disableBulkTerminalPanel');
+  const termOut   = document.getElementById('disableBulkTerminalOutput');
+  const termSt    = document.getElementById('disableBulkTerminalStatus');
+
+  function syncBtn() {
+    if (!execBtn) return;
+    execBtn.style.display = window._serverToken ? 'flex' : 'none';
+  }
+
+  if (execBtn) {
+    execBtn.addEventListener('click', async () => {
+      const loteData = execBtn._loteData;
+      if (!loteData) { showToast('Gere o script primeiro.', '#f59e0b'); return; }
+
+      const result = await window._chamarEndpoint(
+        '/api/desabilitar-lote', 'POST', loteData,
+        termPanel, termOut, termSt
+      );
+      if (result && result.success)
+        showToast(`${result.sucesso || '?'} conta(s) desabilitada(s) com sucesso! ✓`);
+    });
+  }
+
+  document.getElementById('disableBulkTerminalClearBtn')?.addEventListener('click', () => {
+    termOut.innerHTML = '';
+    termPanel.style.display = 'none';
+  });
+
+  syncBtn();
+  setInterval(syncBtn, 3000);
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   DESABILITAR — OU PICKER (factory reutilizável)
+   Usado em: Individual (disableOu*) e Em Lote (disableBulkOu*)
+═══════════════════════════════════════════════════════════════ */
+function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, chipDnId, chipRemoveId, hiddenId }) {
+  const searchEl = document.getElementById(searchId);
+  const clearEl  = document.getElementById(clearId);
+  const dropEl   = document.getElementById(dropId);
+  const chipEl   = document.getElementById(chipId);
+  const chipName = document.getElementById(chipNameId);
+  const chipDn   = document.getElementById(chipDnId);
+  const chipRem  = document.getElementById(chipRemoveId);
+  const hiddenEl = document.getElementById(hiddenId);
+
+  if (!searchEl || !window.AD_DATA) return;
+
+  const ous = window.AD_DATA.ous || [];
+  if (!ous.length) return;
+
+  
+  function ouPath(ou) {
+    return ou.distinguishedName
+      .split(',')
+      .filter(p => p.trim().toUpperCase().startsWith('OU='))
+      .map(p => p.trim().slice(3))
+      .reverse();
+  }
+
+  
+  function ouIcon(name) {
+    const n = name.toLowerCase();
+    if (/\b(user|usu[aá]r|people|pessoa)\b/.test(n)) return '👥';
+    if (/\b(comp(ut)?|workst|pc|desktop|laptop)\b/.test(n)) return '💻';
+    if (/\b(server|serv(id)?|srv)\b/.test(n)) return '🖥️';
+    if (/\b(group|grupo|grp)\b/.test(n)) return '👪';
+    if (/\b(admin|adm|priv)\b/.test(n)) return '🔐';
+    if (/\b(print|impressora)\b/.test(n)) return '🖨️';
+    if (/\b(ti|it|suporte|support|help)\b/.test(n)) return '🛠️';
+    if (/\b(desat|disabled?|inativ)\b/.test(n)) return '🚫';
+    if (/\b(terceiro|extern)\b/.test(n)) return '🤝';
+    return '📁';
+  }
+
+  
+  const sorted = [...ous].sort((a, b) => {
+    const da = a.distinguishedName.split(',').filter(p => p.toUpperCase().startsWith('OU=')).length;
+    const db = b.distinguishedName.split(',').filter(p => p.toUpperCase().startsWith('OU=')).length;
+    if (da !== db) return db - da;
+    return a.distinguishedName.localeCompare(b.distinguishedName, 'pt-BR');
+  });
+
+  function filterOus(term) {
+    if (!term) return sorted;
+    const t = term.toLowerCase();
+    return sorted.filter(ou =>
+      ou.name.toLowerCase().includes(t) ||
+      ou.distinguishedName.toLowerCase().includes(t) ||
+      ouPath(ou).join(' ').toLowerCase().includes(t)
+    );
+  }
+
+  function hl(text, term) {
+    if (!term) return text;
+    const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return text.replace(new RegExp(`(${esc})`, 'gi'), '<mark>$1</mark>');
+  }
+
+  function renderDrop(results, term) {
+    dropEl.innerHTML = '';
+    if (!results.length) {
+      dropEl.innerHTML = `<div class="bulk-ou-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        Nenhuma OU encontrada para "<strong>${term}</strong>"
+      </div>`;
+      dropEl.style.display = 'block';
+      return;
+    }
+
+    const slice = results.slice(0, 80);
+    slice.forEach((ou, idx) => {
+      const path      = ouPath(ou);
+      const leafName  = path[path.length - 1] || ou.name;
+      const parentStr = path.slice(0, -1).join(' › ');
+      const icon      = ouIcon(ou.name);
+
+      const item = document.createElement('div');
+      item.className = 'bulk-ou-drop-item';
+      item.dataset.idx = idx;
+      item.innerHTML = `
+        <span class="bulk-ou-drop-icon">${icon}</span>
+        <div class="bulk-ou-drop-info">
+          <div class="bulk-ou-drop-leaf">
+            ${hl(leafName, term)}
+            ${parentStr ? `<span class="bulk-ou-drop-parent"> › ${hl(parentStr, term)}</span>` : ''}
+          </div>
+          <div class="bulk-ou-drop-dn">${hl(ou.distinguishedName, term)}</div>
+        </div>`;
+      item.addEventListener('mousedown', e => { e.preventDefault(); select(ou); });
+      dropEl.appendChild(item);
+    });
+
+    if (results.length > 80) {
+      const more = document.createElement('div');
+      more.className = 'bulk-ou-drop-more';
+      more.textContent = `+ ${results.length - 80} resultados — refine a busca`;
+      dropEl.appendChild(more);
+    }
+    dropEl.style.display = 'block';
+  }
+
+  function select(ou) {
+    const path = ouPath(ou);
+    hiddenEl.value    = ou.distinguishedName;
+    chipName.textContent = path.join(' › ');
+    chipDn.textContent   = ou.distinguishedName;
+    chipEl.querySelector('.bulk-ou-chip-icon').textContent = ouIcon(ou.name);
+    chipEl.style.display = 'flex';
+    searchEl.value = '';
+    clearEl.style.display = 'none';
+    dropEl.style.display  = 'none';
+  }
+
+  function clear() {
+    hiddenEl.value = '';
+    chipEl.style.display  = 'none';
+    searchEl.value        = '';
+    clearEl.style.display = 'none';
+    dropEl.style.display  = 'none';
+  }
+
+  let debounce;
+  searchEl.addEventListener('input', function () {
+    clearEl.style.display = this.value ? 'flex' : 'none';
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      const term = this.value.trim();
+      if (!term) { dropEl.style.display = 'none'; return; }
+      renderDrop(filterOus(term), term);
+    }, 160);
+  });
+
+  searchEl.addEventListener('focus', function () {
+    const term = this.value.trim();
+    if (term) renderDrop(filterOus(term), term);
+    else if (!hiddenEl.value) renderDrop(sorted.slice(0, 50), '');
+  });
+
+  searchEl.addEventListener('blur', () => setTimeout(() => { dropEl.style.display = 'none'; }, 160));
+
+  searchEl.addEventListener('keydown', function (e) {
+    const items  = dropEl.querySelectorAll('.bulk-ou-drop-item');
+    const active = dropEl.querySelector('.bulk-ou-drop-item.focused');
+    if (e.key === 'Escape') { dropEl.style.display = 'none'; return; }
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = active ? active.nextElementSibling : items[0];
+      active?.classList.remove('focused');
+      if (next?.classList.contains('bulk-ou-drop-item')) next.classList.add('focused');
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = active?.previousElementSibling;
+      active?.classList.remove('focused');
+      if (prev?.classList.contains('bulk-ou-drop-item')) prev.classList.add('focused');
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (active) {
+        const idx = +active.dataset.idx;
+        const term = searchEl.value.trim();
+        const results = filterOus(term);
+        if (results[idx]) select(results[idx]);
+      }
+    }
+  });
+
+  clearEl.addEventListener('click', clear);
+  chipRem.addEventListener('click', clear);
+}
+
+/* ── Inicializar os dois pickers de OU nos painéis de Desabilitar ── */
+/* Aguarda AD_DATA estar disponível (pode já estar, ou ser injetado pelo ad-data.js) */
+(function () {
+  function tryInit() {
+    if (!window.AD_DATA || !window.AD_DATA.ous || !window.AD_DATA.ous.length) return;
+
+    initDisableOuPicker({
+      searchId:    'disableOuSearch',
+      clearId:     'disableOuClear',
+      dropId:      'disableOuDrop',
+      chipId:      'disableOuChip',
+      chipNameId:  'disableOuChipName',
+      chipDnId:    'disableOuChipDn',
+      chipRemoveId:'disableOuChipRemove',
+      hiddenId:    'disableOuSelect',
+    });
+
+    initDisableOuPicker({
+      searchId:    'disableBulkOuSearch',
+      clearId:     'disableBulkOuClear',
+      dropId:      'disableBulkOuDrop',
+      chipId:      'disableBulkOuChip',
+      chipNameId:  'disableBulkOuChipName',
+      chipDnId:    'disableBulkOuChipDn',
+      chipRemoveId:'disableBulkOuChipRemove',
+      hiddenId:    'disableBulkOuSelect',
+    });
+  }
+
+  // Tenta imediatamente (ad-data.js já pode ter sido carregado antes deste script)
+  tryInit();
+
+  // Caso contrário, aguarda o evento DOMContentLoaded e tenta novamente
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', tryInit);
+  }
+
+  // Fallback com polling (caso ad-data.js carregue de forma assíncrona)
+  let attempts = 0;
+  const interval = setInterval(() => {
+    if (window.AD_DATA?.ous?.length || ++attempts > 30) {
+      clearInterval(interval);
+      tryInit();
+    }
+  }, 300);
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   MONITOR DE USUÁRIOS BLOQUEADOS
+   Polling a cada 60s via GET /api/bloqueados
+   Botão Desbloquear chama POST /api/desbloquear (JSON)
+═══════════════════════════════════════════════════════════════ */
+(function LockedUsersMonitor() {
+  const SERVER_BASE   = window._SERVER_BASE || ((window.location.protocol === 'http:' || window.location.protocol === 'https:') ? `${window.location.protocol}//${window.location.host}` : 'http://localhost:7510');
+  const POLL_INTERVAL = 60;
+
+  const offlineBanner = document.getElementById('lockedOfflineBanner');
+  const statusBar     = document.getElementById('lockedStatusBar');
+  const statusDot     = document.getElementById('lockedStatusDot');
+  const statusText    = document.getElementById('lockedStatusText');
+  const lastCheckEl   = document.getElementById('lockedLastCheck');
+  const countdownEl   = document.getElementById('lockedCountdown');
+  const countdownWrap = document.getElementById('lockedCountdownWrap');
+  const checkNowBtn   = document.getElementById('lockedCheckNow');
+  const tableEl       = document.getElementById('lockedTable');
+  const tableBody     = document.getElementById('lockedTableBody');
+  const emptyEl       = document.getElementById('lockedEmpty');
+  const initialEl     = document.getElementById('lockedInitial');
+  const tabBadge      = document.getElementById('lockedTabBadge');
+  const termPanel     = document.getElementById('lockedTerminalPanel');
+  const termOut       = document.getElementById('lockedTerminalOutput');
+  const termSt        = document.getElementById('lockedTerminalStatus');
+  const termClearBtn  = document.getElementById('lockedTerminalClearBtn');
+
+  if (!tableEl) return;
+
+  let countdownTimer = null;
+  let secondsLeft    = POLL_INTERVAL;
+  let isChecking     = false;
+  let allLockedUsers = [];
+
+  /* ── Status UI ── */
+  function setStatus(state, text) {
+    if (!statusBar) return;
+    statusBar.style.display = 'flex';
+    if (statusDot)  statusDot.className    = 'locked-status-dot locked-dot-' + state;
+    if (statusText) statusText.textContent = text;
+  }
+
+  function setTermStatus(type, text) {
+    if (!termSt) return;
+    termSt.textContent = text;
+    termSt.className   = 'terminal-status-badge terminal-st-' + type;
+  }
+
+  function addTermLine(text, hint) {
+    if (!termOut) return;
+    var div   = document.createElement('div');
+    div.className = 'tline';
+    var lower = (text || '').toLowerCase();
+    if (hint === 'error' || text.includes('[ERRO]') || lower.includes('falha') || lower.includes('error'))
+      div.classList.add('tl-error');
+    else if (text.includes('[OK]') || lower.includes('sucesso') || lower.includes('desbloqueada'))
+      div.classList.add('tl-success');
+    else if (text.includes('[AVISO]') || lower.includes('warning'))
+      div.classList.add('tl-warn');
+    else if (hint === 'info')
+      div.classList.add('tl-info');
+    div.textContent = text || '\u00a0';
+    termOut.appendChild(div);
+    termOut.scrollTop = termOut.scrollHeight;
+  }
+
+  /* ── Renderiza tabela de usuários bloqueados ── */
+
+  function renderTable(users) {
+    var count = users.length;
+    if (tabBadge) { tabBadge.textContent = count; tabBadge.style.display = count > 0 ? 'inline-flex' : 'none'; }
+    if (initialEl) initialEl.style.display = 'none';
+
+    if (count === 0) {
+      if (tableEl) tableEl.style.display = 'none';
+      if (emptyEl) emptyEl.style.display = 'flex';
+      return;
+    }
+
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (tableEl) {
+      tableEl.style.display = '';
+      tableEl.classList.remove('locked-table-flash');
+      void tableEl.offsetWidth;
+      tableEl.classList.add('locked-table-flash');
+    }
+
+    tableBody.innerHTML = '';
+    users.forEach(function(u, i) {
+      var name    = u.display || u.sam || '';
+      var parts   = name.trim().split(/\s+/);
+      var initials = parts.length > 1
+        ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+        : name.slice(0, 2).toUpperCase();
+
+      var unlockIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>';
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="locked-td-num">' + (i + 1) + '</td>' +
+        '<td class="locked-td-user"><div class="locked-user-cell">' +
+          '<div class="locked-avatar">' + escapeHTML(initials) + '</div>' +
+          '<div><div class="locked-user-name">' + escapeHTML(name) + '</div>' +
+            (u.title ? '<div class="locked-user-title">' + escapeHTML(u.title) + '</div>' : '') +
+          '</div></div></td>' +
+        '<td><code class="locked-sam">' + escapeHTML(u.sam) + '</code></td>' +
+        '<td>' + (u.department ? escapeHTML(u.department) : '<span style="opacity:.4">—</span>') + '</td>' +
+        '<td class="locked-td-time">' + (u.lastBad ? escapeHTML(u.lastBad) : '<span style="opacity:.4">—</span>') + '</td>' +
+        '<td class="locked-td-count"><span class="locked-bad-count">' + (u.badCount || 0) + '</span></td>' +
+        '<td><button class="btn-unlock" data-sam="' + escapeHTML(u.sam) + '">' + unlockIcon + ' Desbloquear</button></td>';
+      tableBody.appendChild(tr);
+    });
+
+    tableBody.querySelectorAll('.btn-unlock').forEach(function(btn) {
+      btn.addEventListener('click', function() { unlockUser(btn.dataset.sam, btn); });
+    });
+  }
+
+  async function unlockUser(sam, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Aguarde...'; }
+    if (termPanel) termPanel.style.display = 'block';
+    if (termOut)   termOut.innerHTML = '';
+    setTermStatus('running', 'Desbloqueando...');
+    addTermLine('Desbloqueando conta: ' + sam, 'info');
+    if (termPanel) termPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    // Usa o endpoint REST direto em vez de gerar um script PS1
+    var token = window._serverToken;
+    if (!token) {
+      setTermStatus('error', 'Servidor offline');
+      addTermLine('[ERRO] Servidor offline.', 'error');
+      showToast('Servidor offline.', '#ef4444');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg> Desbloquear';
+      }
+      return;
+    }
+
+    try {
+      var ctrl  = new AbortController();
+      var timer = setTimeout(function() { ctrl.abort(); }, 30000);
+      var res   = await fetch(SERVER_BASE + '/api/desbloquear', {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Server-Token': token },
+        body   : JSON.stringify({ sam: sam }),
+        signal : ctrl.signal,
+      });
+      clearTimeout(timer);
+      var result = res.ok ? await res.json() : null;
+    } catch (_) { var result = null; }
+
+    if (!result) {
+      setTermStatus('error', 'Erro de comunicacao');
+      addTermLine('[ERRO] Servidor offline ou erro de comunicacao.', 'error');
+      showToast('Servidor offline.', '#ef4444');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg> Desbloquear';
+      }
+      return;
+    }
+
+    for (var i = 0; i < (result.lines || []).length; i++) {
+      addTermLine(result.lines[i]);
+      await new Promise(function(r) { setTimeout(r, 25); });
+    }
+
+    if (result.success) {
+      setTermStatus('success', 'Desbloqueado');
+      showToast(sam + ' desbloqueado com sucesso!');
+      var row = btn && btn.closest('tr');
+      if (row) {
+        row.classList.add('locked-row-fade');
+        setTimeout(function() {
+          row.remove();
+          var remaining = tableBody ? tableBody.querySelectorAll('tr').length : 0;
+          if (tabBadge) { tabBadge.textContent = remaining; tabBadge.style.display = remaining > 0 ? 'inline-flex' : 'none'; }
+          if (remaining === 0) { if (tableEl) tableEl.style.display = 'none'; if (emptyEl) emptyEl.style.display = 'flex'; }
+        }, 500);
+      }
+    } else {
+      setTermStatus('error', 'Falha');
+      showToast('Falha ao desbloquear ' + sam + '.', '#ef4444');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg> Desbloquear';
+      }
+    }
+  }
+
+  async function checkLockedUsers() {
+    if (isChecking) return;
+    isChecking = true;
+    if (checkNowBtn) checkNowBtn.disabled = true;
+    setStatus('checking', 'Verificando usuarios bloqueados...');
+
+    var token = window._serverToken;
+
+    if (!token) {
+      if (offlineBanner) offlineBanner.style.display = 'flex';
+      if (countdownWrap) countdownWrap.style.display = 'none';
+      if (checkNowBtn)   checkNowBtn.disabled = true;
+      if (statusBar)     statusBar.style.display = 'none';
+      isChecking = false;
+      return;
+    }
+
+    if (offlineBanner) offlineBanner.style.display = 'none';
+    if (checkNowBtn)   checkNowBtn.disabled = false;
+    if (countdownWrap) countdownWrap.style.display = 'flex';
+
+    // Usa endpoint REST /api/bloqueados ao invés de executar script PS1
+    try {
+      var ctrl  = new AbortController();
+      var timer = setTimeout(function() { ctrl.abort(); }, 30000);
+      var res   = await fetch(SERVER_BASE + '/api/bloqueados', {
+        headers: { 'X-Server-Token': token },
+        signal : ctrl.signal,
+      });
+      clearTimeout(timer);
+
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var data = await res.json();
+
+      if (!data.success && data.error) {
+        setStatus('error', 'Erro ao consultar o AD: ' + data.error);
+        isChecking = false;
+        return;
+      }
+
+      allLockedUsers = Array.isArray(data.users) ? data.users : [];
+    } catch (e) {
+      setStatus('error', 'Erro ao consultar o AD');
+      isChecking = false;
+      return;
+    }
+
+    applyLockedFilter();
+    resetCountdown();
+    isChecking = false;
+  }
+
+  let lockedSortOrder = 'desc';
+
+  function parseDateBR(dateStr) {
+    if (!dateStr) return 0;
+    const parts = dateStr.split(/[\s/:]+/);
+    if (parts.length < 6) return 0;
+    return new Date(parts[2], parts[1]-1, parts[0], parts[3], parts[4], parts[5]).getTime();
+  }
+
+  function applyLockedFilter() {
+    let users = allLockedUsers.slice();
+
+    users.sort(function(a, b) {
+      const timeA = parseDateBR(a.lastBad);
+      const timeB = parseDateBR(b.lastBad);
+      if (timeA === timeB) return 0;
+      if (lockedSortOrder === 'desc') {
+        return timeA < timeB ? 1 : -1;
+      } else {
+        return timeA > timeB ? 1 : -1;
+      }
+    });
+
+    const filterTodayEl = document.getElementById('lockedFilterToday');
+    if (filterTodayEl && filterTodayEl.checked) {
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const yyyy = now.getFullYear();
+      const prefix = dd + '/' + mm + '/' + yyyy;
+      
+      users = users.filter(function(u) {
+        return u.lastBad && u.lastBad.startsWith(prefix);
+      });
+    }
+
+    renderTable(users);
+    var nowStr = new Date().toLocaleTimeString('pt-BR');
+    setStatus(users.length > 0 ? 'warn' : 'ok', users.length + ' usuario(s) exibido(s) (' + allLockedUsers.length + ' total)');
+    if (lastCheckEl) lastCheckEl.textContent = 'Ultima verificacao: ' + nowStr;
+  }
+
+  const filterTodayEl = document.getElementById('lockedFilterToday');
+  if (filterTodayEl) {
+    filterTodayEl.addEventListener('change', applyLockedFilter);
+  }
+
+  const lockedSortCol = document.getElementById('lockedSortCol');
+  const lockedSortIcon = document.getElementById('lockedSortIcon');
+  if (lockedSortCol) {
+    lockedSortCol.addEventListener('click', function() {
+      lockedSortOrder = (lockedSortOrder === 'desc') ? 'asc' : 'desc';
+      if (lockedSortIcon) {
+        lockedSortIcon.textContent = (lockedSortOrder === 'desc') ? '⬇️' : '⬆️';
+      }
+      applyLockedFilter();
+    });
+  }
+
+  function resetCountdown() {
+    clearInterval(countdownTimer);
+    secondsLeft = POLL_INTERVAL;
+    if (countdownEl) countdownEl.textContent = secondsLeft;
+    countdownTimer = setInterval(function() {
+      secondsLeft--;
+      if (countdownEl) countdownEl.textContent = Math.max(0, secondsLeft);
+      if (secondsLeft <= 0) { clearInterval(countdownTimer); checkLockedUsers(); }
+    }, 1000);
+  }
+
+  if (checkNowBtn) {
+    checkNowBtn.addEventListener('click', function() {
+      clearInterval(countdownTimer);
+      checkLockedUsers();
+    });
+  }
+
+  if (termClearBtn) {
+    termClearBtn.addEventListener('click', function() {
+      if (termOut)   termOut.innerHTML = '';
+      if (termPanel) termPanel.style.display = 'none';
+    });
+  }
+
+  window._lockedMonitorCheckNow = checkLockedUsers;
+
+  function checkOnlineState() {
+    const online = !!window._serverToken;
+    if (!online) {
+      if (offlineBanner) offlineBanner.style.display = 'flex';
+      if (countdownWrap) countdownWrap.style.display = 'none';
+      if (checkNowBtn)   checkNowBtn.disabled = true;
+      if (statusBar)     statusBar.style.display = 'none';
+    } else {
+      if (offlineBanner) offlineBanner.style.display = 'none';
+      if (checkNowBtn)   checkNowBtn.disabled = false;
+      if (countdownWrap) countdownWrap.style.display = 'flex';
+    }
+  }
+
+  // Usa o token global do servidor (gerenciado pelo módulo principal)
+  checkOnlineState();
+  setInterval(checkOnlineState, 3000);
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   LEITOR DE DIAGNÓSTICO — JSON READER
+   Gerencia a aba Computadores como leitor local de arquivos JSON
+   de diagnóstico de hardware. Sem dependência de servidor.
+═══════════════════════════════════════════════════════════════ */
+(function ComputersJsonReader() {
+  const uploadZone    = document.getElementById('compUploadZone');
+  const fileInput     = document.getElementById('compFileInput');
+  const fileList      = document.getElementById('compFileList');
+  const fileListEmpty = document.getElementById('compFileListEmpty');
+  const detailsEmpty  = document.getElementById('compDetailsEmpty');
+  const detailsContent = document.getElementById('compDetailsContent');
+  const headerName    = document.getElementById('compHeaderName');
+  const headerDate    = document.getElementById('compHeaderDate');
+  const clearAllBtn   = document.getElementById('compClearAllBtn');
+
+  if (!fileList) return;
+
+  let loadedFiles = [];  // Array of { filename, data (parsed JSON) }
+  let selectedIndex = -1;
+
+  
+  function renderFileList() {
+    fileList.innerHTML = '';
+    
+    if (loadedFiles.length === 0) {
+      fileListEmpty.style.display = 'flex';
+      if (clearAllBtn) clearAllBtn.style.display = 'none';
+      return;
+    }
+
+    fileListEmpty.style.display = 'none';
+    if (clearAllBtn) clearAllBtn.style.display = '';
+
+    loadedFiles.forEach((item, idx) => {
+      const comp = item.data.Computador || {};
+      const so = item.data.SO || {};
+      const pcName = comp.Nome || item.filename.replace('.json', '');
+      const osName = so.Nome || '';
+      const analysisDate = item.data.AnaliseData || '';
+
+      const row = document.createElement('div');
+      row.className = 'comp-file-row' + (idx === selectedIndex ? ' selected' : '');
+      row.innerHTML = `
+        <div class="comp-file-row-info">
+          <div class="comp-file-row-name">${escapeHTML(pcName)}</div>
+          <div class="comp-file-row-meta">${escapeHTML(osName)}${analysisDate ? ' · ' + escapeHTML(analysisDate) : ''}</div>
+        </div>
+        <button class="comp-file-row-remove" title="Remover" data-idx="${idx}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      `;
+
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.comp-file-row-remove')) return;
+        selectFile(idx);
+      });
+
+      const removeBtn = row.querySelector('.comp-file-row-remove');
+      if (removeBtn) {
+        removeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          removeFile(idx);
+        });
+      }
+
+      fileList.appendChild(row);
+    });
+  }
+
+  
+  function selectFile(idx) {
+    if (idx < 0 || idx >= loadedFiles.length) return;
+    selectedIndex = idx;
+    renderFileList();
+    renderDetails(loadedFiles[idx]);
+  }
+
+  
+  function removeFile(idx) {
+    loadedFiles.splice(idx, 1);
+    if (selectedIndex === idx) {
+      selectedIndex = -1;
+      clearDetails();
+    } else if (selectedIndex > idx) {
+      selectedIndex--;
+    }
+    renderFileList();
+  }
+
+  
+  function clearDetails() {
+    detailsEmpty.style.display = 'flex';
+    detailsContent.style.display = 'none';
+    headerName.textContent = 'Nenhum arquivo selecionado';
+    if (headerDate) headerDate.style.display = 'none';
+  }
+
+  function getDiagnosticsAndTips(data) {
+    const issues = [];
+    const tips = [];
+
+    const ram = data.RAM || {};
+    const disks = Array.isArray(data.Discos) ? data.Discos : (data.Discos ? [data.Discos] : []);
+    const comp = data.Computador || {};
+    const cpu = data.CPU || {};
+
+    // 1. RAM Checagem
+    const ramPercent = parseInt(ram.PercentualUso) || 0;
+    const ramTotal = parseFloat(ram.Total) || 0;
+    if (ramPercent >= 80) {
+      issues.push(`<strong>RAM crítica (${ramPercent}%):</strong> O sistema está consumindo quase toda a RAM disponível (${ram.Usado} GB de ${ram.Total} GB). Isso força o Windows a usar o arquivo de paginação (no disco), causando lentidão e travamentos.`);
+      tips.push("Feche navegadores com muitas abas abertas e programas em segundo plano.");
+      if (ramTotal <= 8) {
+        tips.push("Considere fazer upgrade de hardware para no mínimo 16 GB de RAM.");
+      }
+    }
+
+    // 2. Disco Checagem
+    disks.forEach(d => {
+      const livre = parseFloat(d.Livre) || 0;
+      const total = parseFloat(d.Tamanho) || 0;
+      const usoPercent = parseInt(d.UsadoPercent) || 0;
+      const letra = d.Letra || 'C:';
+      
+      if (d.SaudeStatus && d.SaudeStatus !== 'Saudavel') {
+        issues.push(`<strong>Disco ${letra} com saúde comprometida (${d.SaudeStatus}):</strong> Falhas físicas de disco causam congelamentos totais de tela e telas azuis (BSOD).`);
+        tips.push(`<strong>CRÍTICO:</strong> Faça backup imediato dos dados de ${letra} e substitua o disco o quanto antes.`);
+      }
+
+      if (usoPercent >= 85 || (total > 0 && livre < 15)) {
+        issues.push(`<strong>Falta de espaço no disco ${letra} (${usoPercent}% de uso):</strong> Restam apenas ${livre} GB. A falta de espaço impede a criação de arquivos temporários e caches do sistema.`);
+        tips.push(`Execute a ferramenta Limpeza de Disco (cleanmgr) no disco ${letra} para liberar espaço.`);
+      }
+    });
+
+    // 3. Uptime Checagem
+    const uptime = comp.Uptime || '';
+    const hasDays = uptime.toLowerCase().includes('day') || uptime.toLowerCase().includes('dia') || /^[3-9]\s*d/i.test(uptime) || /^[1-9]\d+\s*d/i.test(uptime);
+    if (hasDays) {
+      issues.push(`<strong>Tempo de atividade muito alto (${uptime}):</strong> O computador não é reiniciado completamente há dias, acumulando cache de kernel e vazamento de memória.`);
+      tips.push("Faça um **Reiniciar** completo no Windows semanalmente para limpar a memória temporária do kernel.");
+    }
+
+    // 4. CPU Checagem
+    const cores = parseInt(cpu.NucleosFisicos) || 0;
+    if (cores > 0 && cores < 4) {
+      issues.push(`<strong>Processador com poucos núcleos físicos (${cores}):</strong> Pode sofrer de afunilamento de CPU durante reuniões por videoconferência ou varredura de antivírus.`);
+      tips.push("Evite rodar atualizações de sistema ou varreduras de antivírus durante o horário de trabalho ativo.");
+    }
+
+    if (issues.length === 0) {
+      issues.push("<span style='color:green;'>✔ Nenhum gargalo crítico de hardware ou sistema foi detectado.</span>");
+      tips.push("Mantenha o sistema operacional e drivers de vídeo atualizados para melhor estabilidade.");
+    }
+
+    return { issues, tips };
+  }
+
+  
+  function renderDetails(item) {
+    const data = item.data;
+    const comp = data.Computador || {};
+    const so = data.SO || {};
+    const cpu = data.CPU || {};
+    const ram = data.RAM || {};
+    const seg = data.Seguranca || {};
+    const bat = data.Bateria || {};
+
+    const report = getDiagnosticsAndTips(data);
+    const issuesHtml = report.issues.map(issue => `
+      <div style="display: flex; gap: 4px; align-items: flex-start; color: #7f1d1d; background: #fef2f2; border: 1px solid #fee2e2; padding: 4px; margin-bottom: 2px;">
+        <span style="font-size: 11px; color: #dc2626;">⚠</span>
+        <div style="line-height: 1.25;">${issue}</div>
+      </div>
+    `).join('');
+    
+    const tipsHtml = report.tips.map(tip => `
+      <li style="margin-left: 10px; margin-bottom: 2px;">${tip}</li>
+    `).join('');
+
+    // Header
+    headerName.textContent = comp.Nome || item.filename;
+    if (headerDate && data.AnaliseData) {
+      headerDate.textContent = 'Análise: ' + data.AnaliseData;
+      headerDate.style.display = '';
+    } else if (headerDate) {
+      headerDate.style.display = 'none';
+    }
+
+    // Rebuild content
+    detailsEmpty.style.display = 'none';
+    detailsContent.style.display = 'flex';
+
+    detailsContent.innerHTML = `
+      <!-- Info da Análise -->
+      <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:#f0f4f0; border:1px solid var(--win-gray); font-size:10px; color:#4b5563;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14" style="flex-shrink:0;">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span><strong>Data da Análise:</strong> ${escapeHTML(data.AnaliseData || 'Não informado')}</span>
+        <span style="margin-left:auto;"><strong>Arquivo:</strong> ${escapeHTML(item.filename)}</span>
+      </div>
+
+      <!-- Grid 2x2: Sistema & CPU -->
+      <div class="summary-grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; padding: 0; border: none; background: transparent;">
+        
+        <!-- Sistema & BIOS -->
+        <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+          <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">Sistema & BIOS</h4>
+          <div style="display: flex; flex-direction: column; gap: 3px; font-size: 11px;">
+            <div><strong>Nome:</strong> ${escapeHTML(comp.Nome || '-')}</div>
+            <div><strong>Fabricante:</strong> ${escapeHTML(comp.Fabricante || '-')}</div>
+            <div><strong>Modelo:</strong> ${escapeHTML(comp.Modelo || '-')}</div>
+            <div><strong>BIOS:</strong> ${escapeHTML(comp.BIOS || '-')}</div>
+            <div><strong>Firmware:</strong> <span class="badge ${comp.Firmware === 'UEFI' ? 'badge-uefi' : 'badge-legacy'}" style="font-size: 9px; padding: 0px 4px;">${escapeHTML(comp.Firmware || '-')}</span></div>
+            <div><strong>Uptime:</strong> ${escapeHTML(comp.Uptime || '-')}</div>
+          </div>
+        </div>
+
+        <!-- Processador (CPU) -->
+        <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+          <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">Processador (CPU)</h4>
+          <div style="display: flex; flex-direction: column; gap: 3px; font-size: 11px;">
+            <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: bold;" title="${escapeHTML(cpu.Nome || '')}">${escapeHTML(cpu.Nome || '-')}</div>
+            <div><strong>Núcleos:</strong> ${cpu.NucleosFisicos || '-'} Físicos / ${cpu.NucleosLogicos || '-'} Lógicos</div>
+            <div><strong>Velocidade:</strong> ${cpu.VelocidadeBase || '-'} GHz</div>
+            <div><strong>Arquitetura:</strong> ${escapeHTML(cpu.Arquitetura || '-')}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Grid 2x2: RAM & SO -->
+      <div class="summary-grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; padding: 0; border: none; background: transparent;">
+        
+        <!-- Memória RAM -->
+        <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+          <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">Memória RAM</h4>
+          <div style="display: flex; flex-direction: column; gap: 3px; font-size: 11px;">
+            <div><strong>Total:</strong> ${ram.Total || '-'} GB</div>
+            <div><strong>Usado:</strong> ${ram.Usado || '-'} GB (${ram.PercentualUso || '0'}%)</div>
+            <div style="display: flex; align-items: center; gap: 4px; margin: 2px 0;">
+              <div class="comp-progress-container" style="flex: 1; height: 10px; background: #ddd; position: relative;">
+                <div style="height: 100%; background: ${(ram.PercentualUso || 0) > 85 ? 'var(--accent-red)' : 'var(--sage-titlebar)'}; width: ${ram.PercentualUso || 0}%;"></div>
+              </div>
+            </div>
+            <div><strong>Livre:</strong> ${ram.Livre || '-'} GB</div>
+            <div><strong>Slots Ocupados:</strong> ${ram.SlotsOcupados || '-'}</div>
+            <div><strong>Velocidade:</strong> ${ram.Velocidade || '-'} MHz</div>
+          </div>
+        </div>
+
+        <!-- Sistema Operacional & Segurança -->
+        <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+          <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">S.O. & Segurança</h4>
+          <div style="display: flex; flex-direction: column; gap: 3px; font-size: 11px;">
+            <div><strong>S.O.:</strong> ${escapeHTML(so.Nome || '-')}</div>
+            <div><strong>Versão:</strong> ${escapeHTML(so.Versao || '-')}</div>
+            <div><strong>Arquitetura:</strong> ${escapeHTML(so.Arquitetura || '-')}</div>
+            <div style="border-top: 1px dashed var(--win-gray); margin-top: 4px; padding-top: 4px;">
+              <strong>TPM:</strong> ${escapeHTML(seg.TPM || 'Não Encontrado')}
+              <span class="badge ${seg.TPMAtivo ? 'badge-sim' : 'badge-nao'}" style="font-size: 9px; padding: 0 4px; margin-left: 4px;">${seg.TPMAtivo ? 'Ativo' : 'Inativo'}</span>
+            </div>
+            <div><strong>Secure Boot:</strong> <span class="badge ${seg.SecureBoot ? 'badge-sim' : 'badge-nao'}" style="font-size: 9px; padding: 0 4px;">${seg.SecureBoot ? 'Sim' : 'Não'}</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- GPU -->
+      <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+        <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">Placa de Vídeo (GPU)</h4>
+        <div id="containerCompGpus" style="display:flex; flex-direction:column; gap:6px; font-size:11px;"></div>
+      </div>
+
+      <!-- Discos -->
+      <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+        <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">Armazenamento (Partições Locais)</h4>
+        <div id="containerCompDiscos" style="display:flex; flex-direction:column; gap:8px; font-size:11px;"></div>
+      </div>
+
+      <!-- Rede -->
+      <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+        <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">Rede (Interfaces Ativas)</h4>
+        <div id="containerCompRede" style="display:flex; flex-direction:column; gap:6px; font-size:11px;"></div>
+      </div>
+
+      <!-- Bateria (condicional) -->
+      ${bat.TemBateria ? `
+      <div style="border: 1px solid var(--win-gray); padding: 8px; background: #f9faf9;">
+        <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase;">Bateria</h4>
+        <div style="display: flex; flex-direction: column; gap: 3px; font-size: 11px;">
+          <div><strong>Carga:</strong> ${bat.Carga || '0'}%</div>
+          <div><strong>Status:</strong> ${escapeHTML(bat.Status || '-')}</div>
+          <div><strong>Saúde:</strong> ${bat.Saude || '100'}%</div>
+        </div>
+      </div>` : ''}
+
+      <!-- Diagnóstico de Travamentos & Recomendações -->
+      <div style="border: 1.5px solid var(--win-gray); padding: 8px; background: #fffff2; margin-top: 4px;">
+        <h4 style="font-size: 11px; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; margin-bottom: 6px; text-transform: uppercase; color: #9a3412; display: flex; align-items: center; gap: 4px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" style="flex-shrink:0;">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          Diagnóstico de Estabilidade & Performance
+        </h4>
+        <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;">
+          ${issuesHtml}
+        </div>
+        <h5 style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #1e293b; margin-bottom: 4px;">Recomendações e Dicas Preventivas:</h5>
+        <ul style="font-size: 10.5px; padding-left: 8px; margin: 0; color: #334155; line-height: 1.3;">
+          ${tipsHtml}
+        </ul>
+      </div>
+    `;
+
+    // Preencher GPUs
+    const gpuContainer = document.getElementById('containerCompGpus');
+    if (gpuContainer) {
+      if (data.GPU && Array.isArray(data.GPU) && data.GPU.length > 0) {
+        data.GPU.forEach(g => {
+          const div = document.createElement('div');
+          div.style.cssText = 'padding: 4px 0; border-bottom: 1px dashed #eee;';
+          div.innerHTML = `<strong>${escapeHTML(g.Nome || 'Placa de Vídeo')}</strong> — VRAM: ${g.VRAM || 0} GB · Driver: ${escapeHTML(g.Driver || '-')} · Resolução: ${escapeHTML(g.Resolucao || '-')}`;
+          gpuContainer.appendChild(div);
+        });
+      } else if (data.GPU && typeof data.GPU === 'object' && !Array.isArray(data.GPU)) {
+        const g = data.GPU;
+        const div = document.createElement('div');
+        div.style.cssText = 'padding: 4px 0;';
+        div.innerHTML = `<strong>${escapeHTML(g.Nome || 'Placa de Vídeo')}</strong> — VRAM: ${g.VRAM || 0} GB · Driver: ${escapeHTML(g.Driver || '-')} · Resolução: ${escapeHTML(g.Resolucao || '-')}`;
+        gpuContainer.appendChild(div);
+      } else {
+        gpuContainer.innerHTML = '<div style="opacity:.5">Nenhuma placa de vídeo detectada</div>';
+      }
+    }
+
+    // Preencher Discos
+    const diskContainer = document.getElementById('containerCompDiscos');
+    if (diskContainer) {
+      const disks = Array.isArray(data.Discos) ? data.Discos : (data.Discos ? [data.Discos] : []);
+      if (disks.length > 0) {
+        disks.forEach(d => {
+          const div = document.createElement('div');
+          div.className = 'disk-part-item';
+          const label = d.Volume ? ` (${d.Volume})` : '';
+          div.innerHTML = `
+            <div class="disk-part-header">
+              <strong>Disco ${escapeHTML(d.Letra || '?:')}${escapeHTML(label)} [${escapeHTML(d.Tipo || 'SSD')}]</strong>
+              <span>${d.Usado || 0} GB usados de ${d.Tamanho || 0} GB (${d.UsadoPercent || 0}%)</span>
+            </div>
+            <div class="comp-progress-container" style="height: 10px; background: #ddd; position: relative;">
+              <div style="height: 100%; background: ${d.SaudeStatus === 'Saudavel' ? 'var(--sage-titlebar)' : 'var(--accent-red)'}; width: ${d.UsadoPercent || 0}%;"></div>
+            </div>
+            <div style="font-size: 9px; color: #666; margin-top: 2px; display:flex; justify-content:space-between;">
+              <span>Espaço Livre: ${d.Livre || 0} GB</span>
+              <span>Saúde: <span class="badge ${d.SaudeStatus === 'Saudavel' ? 'badge-sim' : 'badge-nao'}" style="font-size: 8px; padding:0 3px;">${escapeHTML(d.SaudeStatus || 'Desconhecido')}</span></span>
+            </div>
+          `;
+          diskContainer.appendChild(div);
+        });
+      } else {
+        diskContainer.innerHTML = '<div style="opacity:.5">Nenhum disco detectado</div>';
+      }
+    }
+
+    // Preencher Rede
+    const netContainer = document.getElementById('containerCompRede');
+    if (netContainer) {
+      const networks = Array.isArray(data.Rede) ? data.Rede : (data.Rede ? [data.Rede] : []);
+      if (networks.length > 0) {
+        networks.forEach(n => {
+          const div = document.createElement('div');
+          div.style.cssText = 'padding: 4px 0; border-bottom: 1px dashed #eee;';
+          div.innerHTML = `<strong>${escapeHTML(n.Nome || 'Interface')}</strong> — IP: ${escapeHTML(n.IP || '-')} · MAC: ${escapeHTML(n.MAC || '-')} · Velocidade: ${escapeHTML(n.Velocidade || '-')}`;
+          netContainer.appendChild(div);
+        });
+      } else {
+        netContainer.innerHTML = '<div style="opacity:.5">Nenhuma interface de rede ativa</div>';
+      }
+    }
+  }
+
+  
+  function handleFiles(files) {
+    if (!files || !files.length) return;
+
+    let count = 0;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file.name.toLowerCase().endsWith('.json')) {
+        showToast('Apenas arquivos JSON são aceitos: ' + file.name, '#dc2626');
+        continue;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        try {
+          const json = JSON.parse(evt.target.result);
+
+          // Normalizar chaves (suportar variações de casing)
+          const compInfo = json.Computador || json.computador;
+          const soInfo = json.SO || json.so || json.So;
+
+          if (!compInfo && !soInfo) {
+            showToast('Estrutura JSON inválida: ' + file.name, '#dc2626');
+            return;
+          }
+
+          // Normalizar os campos principais
+          if (!json.Computador && compInfo) json.Computador = compInfo;
+          if (!json.SO && soInfo) json.SO = soInfo;
+          if (!json.CPU && (json.cpu || json.Cpu)) json.CPU = json.cpu || json.Cpu;
+          if (!json.RAM && (json.ram || json.Ram)) json.RAM = json.ram || json.Ram;
+          if (!json.GPU && (json.gpu || json.Gpu)) json.GPU = json.gpu || json.Gpu;
+          if (!json.Discos && (json.discos)) json.Discos = json.discos;
+          if (!json.Seguranca && (json.seguranca)) json.Seguranca = json.seguranca;
+          if (!json.Rede && (json.rede)) json.Rede = json.rede;
+          if (!json.Bateria && (json.bateria)) json.Bateria = json.bateria;
+
+          loadedFiles.push({
+            filename: file.name,
+            data: json
+          });
+
+          count++;
+          renderFileList();
+
+          // Auto-selecionar o primeiro arquivo se nenhum está selecionado
+          if (selectedIndex === -1) {
+            selectFile(0);
+          }
+        } catch (err) {
+          console.error('Erro ao ler JSON:', err);
+          showToast('Erro ao ler JSON: ' + file.name, '#dc2626');
+        }
+      };
+
+      reader.onerror = function() {
+        showToast('Erro de leitura: ' + file.name, '#dc2626');
+      };
+
+      reader.readAsText(file);
+    }
+  }
+
+  
+
+  // Upload zone drag & drop
+  if (uploadZone) {
+    uploadZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadZone.classList.add('dragover');
+    });
+
+    uploadZone.addEventListener('dragleave', () => {
+      uploadZone.classList.remove('dragover');
+    });
+
+    uploadZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      handleFiles(e.dataTransfer.files);
+    });
+
+    uploadZone.addEventListener('click', () => {
+      fileInput.click();
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+    fileInput.addEventListener('change', (e) => {
+      handleFiles(e.target.files);
+      fileInput.value = '';
+    });
+  }
+
+  // Clear all button
+  if (clearAllBtn) {
+    clearAllBtn.addEventListener('click', () => {
+      loadedFiles = [];
+      selectedIndex = -1;
+      clearDetails();
+      renderFileList();
+      showToast('Todos os arquivos foram removidos.');
+    });
+  }
+
+  // Initial render
+  renderFileList();
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   M365 MANUAL ACTIVATION PANEL
+   Controla a aba separada para inclusão de licenças e grupos M365
+   diretamente na nuvem (Exchange Online e Microsoft Graph)
+   sem aguardar a sincronização do AD local.
+═══════════════════════════════════════════════════════════════ */
+(function () {
+  const SERVER_BASE = window._SERVER_BASE || `http://localhost:7510`;
+
+  const searchEl       = document.getElementById('m365ActUserSearch');
+  const clearEl        = document.getElementById('clearM365ActUser');
+  const dropEl         = document.getElementById('m365ActUserDropdown');
+  const chipEl         = document.getElementById('m365ActUserChip');
+  const avatarEl       = document.getElementById('m365ActChipAvatar');
+  const nameEl         = document.getElementById('m365ActChipName');
+  const metaEl         = document.getElementById('m365ActChipMeta');
+  const removeEl       = document.getElementById('removeM365ActUser');
+
+  const emailEl         = document.getElementById('m365ActEmail');
+  const licenseSelect   = document.getElementById('m365ActLicense');
+  const groupsSearch    = document.getElementById('m365ActGroupsSearch');
+  const groupsContainer = document.getElementById('m365ActGroupsContainer');
+  const btnApply        = document.getElementById('btnM365ActApply');
+
+  const termOut         = document.getElementById('m365ActTerminalOutput');
+  const termStatus      = document.getElementById('m365ActTerminalStatus');
+  const termClearBtn    = document.getElementById('m365ActTerminalClearBtn');
+
+  if (!searchEl) return;
+
+  let debounceTimer = null;
+  let selectedUser  = null;
+  let m365Connected = false;
+  let loadedM365Groups = [];
+  const selectedM365GroupsMap = new Map();
+
+  // Dicionário de tradução dos SKU Part Numbers para nomes oficiais da Microsoft
+  const SKU_MAP = {
+    'O365_BUSINESS_ESSENTIALS': 'Microsoft 365 Business Basic',
+    'O365_BUSINESS_PREMIUM': 'Microsoft 365 Business Premium',
+    'O365_BUSINESS': 'Microsoft 365 Business Standard',
+    'SMB_BUSINESS': 'Microsoft 365 Business Standard',
+    'EXCHANGESTANDARD': 'Exchange Online (Plan 1)',
+    'EXCHANGEENTERPRISE': 'Exchange Online (Plan 2)',
+    'SPE_E3': 'Microsoft 365 E3',
+    'SPE_E5': 'Microsoft 365 E5',
+    'ENTERPRISEPACK': 'Office 365 E3',
+    'ENTERPRISEPREMIUM': 'Office 365 E5',
+    'DEVELOPER_PACK': 'Microsoft 365 E5 Developer',
+    'POWER_BI_PRO': 'Power BI Pro',
+    'POWER_BI_STANDARD': 'Power BI Free',
+    'TEAMS_ENTERPRISE': 'Microsoft Teams Enterprise',
+    'MCOPCOM': 'Microsoft 365 Copilot',
+    'ONEDRIVESTANDARD': 'OneDrive for Business (Plan 1)',
+    'ONEDRIVEENTERPRISE': 'OneDrive for Business (Plan 2)',
+    'PROJECT_PROFESSIONAL': 'Project Plan 3',
+    'VISIOPRO': 'Visio Plan 1',
+    'DYN365_CUSTOMER_VOICE_TRIAL': 'Dynamics 365 Customer Voice Trial',
+    'COPILOT_STUDIO_VIRAL_TRIAL': 'Microsoft Copilot Studio Viral Trial',
+    'FABRIC_FREE': 'Microsoft Fabric (Free)',
+    'POWERAPPS_DEVELOPER': 'Microsoft Power Apps for Developer',
+    'POWERAUTOMATE_FREE': 'Microsoft Power Automate Free',
+    'STREAM_TRIAL': 'Microsoft Stream Trial',
+    'PLANNER_PROJECT_PLAN3': 'Planner and Project Plan 3',
+    'VISIO_PLAN1': 'Visio Plan 1'
+  };
+
+  function getFriendlySkuName(skuPartNumber) {
+    if (SKU_MAP[skuPartNumber]) {
+      return SKU_MAP[skuPartNumber];
+    }
+    return skuPartNumber
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  }
+
+  function getUsers() {
+    return (window.AD_DATA && window.AD_DATA.users) ? window.AD_DATA.users : [];
+  }
+
+  function getInitials(name) {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  function hlText(text, term) {
+    if (!term || !text) return text;
+    const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const tNorm = normalize(term);
+    const txtNorm = normalize(text);
+    const idx = txtNorm.indexOf(tNorm);
+    if (idx === -1) return text;
+    return text.substring(0, idx) + '<mark>' + text.substring(idx, idx + term.length) + '</mark>' + text.substring(idx + term.length);
+  }
+
+  function filterUsers(term) {
+    const normalize = s => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
+    const t = normalize(term);
+    return getUsers().filter(u =>
+      normalize(u.samAccountName).includes(t) ||
+      normalize(u.displayName).includes(t)    ||
+      normalize(u.name).includes(t)           ||
+      normalize(u.department).includes(t)
+    ).slice(0, 12);
+  }
+
+  function renderDrop(results, term) {
+    dropEl.innerHTML = '';
+    if (!results.length) {
+      dropEl.innerHTML = `
+        <div class="user-dropdown-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          Nenhum usuário encontrado
+        </div>`;
+      dropEl.style.display = 'block';
+      return;
+    }
+    results.forEach(u => {
+      const item = document.createElement('div');
+      item.className = 'user-dropdown-item';
+      const initials = getInitials(u.displayName || u.samAccountName);
+      const isDisabled = u.enabled === false;
+      item.innerHTML = `
+        <div class="user-dropdown-avatar" style="${isDisabled ? 'background:linear-gradient(135deg,#6b7280,#9ca3af)' : ''}">${initials}</div>
+        <div class="user-dropdown-info">
+          <div class="user-dropdown-name">${hlText(u.displayName || u.samAccountName, term)}
+            ${isDisabled ? '<span style="font-size:10px;background:#ef444420;color:#ef4444;border:1px solid #ef444430;border-radius:99px;padding:1px 7px;margin-left:6px;">Desabilitado</span>' : ''}
+          </div>
+          <div class="user-dropdown-meta">
+            <span class="user-dropdown-sam">${hlText(u.samAccountName, term)}</span>
+            ${u.department ? `<span class="user-dropdown-dept">${u.department}</span>` : ''}
+            ${u.title ? `<span class="user-dropdown-dept">${u.title}</span>` : ''}
+          </div>
+        </div>`;
+      item.addEventListener('mousedown', e => { e.preventDefault(); selectUser(u); });
+      dropEl.appendChild(item);
+    });
+    dropEl.style.display = 'block';
+  }
+
+  function selectUser(u) {
+    selectedUser = u;
+    const initials = getInitials(u.displayName || u.samAccountName);
+    avatarEl.textContent = initials;
+    nameEl.textContent   = u.displayName || u.samAccountName;
+    metaEl.textContent   = u.samAccountName
+      + (u.department ? ` · ${u.department}` : '')
+      + (u.title ? ` · ${u.title}` : '');
+
+    chipEl.style.display   = 'flex';
+    searchEl.value         = '';
+    clearEl.style.display  = 'none';
+    dropEl.style.display   = 'none';
+
+    // Preenche o email/UPN
+    if (u.userPrincipalName) {
+      emailEl.value = u.userPrincipalName;
+    } else if (u.emailAddress) {
+      emailEl.value = u.emailAddress;
+    } else {
+      emailEl.value = `${u.samAccountName.toLowerCase()}@empresa.com.br`;
+    }
+  }
+
+  function clearSelection() {
+    selectedUser         = null;
+    chipEl.style.display = 'none';
+    searchEl.value       = '';
+    clearEl.style.display = 'none';
+    emailEl.value        = '';
+  }
+
+  // Eventos de Autocomplete de Usuário
+  searchEl.addEventListener('input', function () {
+    const term = this.value.trim();
+    clearEl.style.display = term ? 'flex' : 'none';
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      if (term.length >= 2) {
+        const results = filterUsers(term);
+        renderDrop(results, term);
+      } else {
+        dropEl.style.display = 'none';
+      }
+    }, 200);
+  });
+
+  searchEl.addEventListener('focus', function () {
+    const term = this.value.trim();
+    if (term.length >= 2) {
+      const results = filterUsers(term);
+      renderDrop(results, term);
+    }
+  });
+
+  searchEl.addEventListener('blur', function () {
+    setTimeout(() => { dropEl.style.display = 'none'; }, 200);
+  });
+
+  clearEl.addEventListener('click', function () {
+    searchEl.value = '';
+    clearEl.style.display = 'none';
+    dropEl.style.display = 'none';
+    searchEl.focus();
+  });
+
+  removeEl.addEventListener('click', clearSelection);
+
+  // Helper para adicionar linhas ao terminal
+  function addTermLine(text, typeHint) {
+    if (!termOut) return;
+    const line = document.createElement('div');
+    line.className = 'tline';
+    const lower = (text || '').toLowerCase();
+    if (typeHint === 'error' || text.includes('❌') || lower.includes('falha') || lower.includes('erro') || lower.includes('error')) {
+      line.classList.add('tl-error');
+    } else if (text.includes('✅') || text.includes('[OK]') || lower.includes('sucesso') || lower.includes('criado') || lower.includes('desbloqueada') || lower.includes('desabilitada')) {
+      line.classList.add('tl-success');
+    } else if (text.includes('⚠') || lower.includes('warning') || lower.includes('aviso')) {
+      line.classList.add('tl-warn');
+    } else if (text.includes('🔗') || text.includes('⚡') || text.includes('🔑') || text.includes('📂') || text.includes('📝') || typeHint === 'info') {
+      line.classList.add('tl-info');
+    }
+    line.textContent = text || '\u00a0';
+    termOut.appendChild(line);
+    termOut.scrollTop = termOut.scrollHeight;
+  }
+
+  // Renderização de Grupos do M365 com pesquisa reativa
+  function renderGroups(filterText = '') {
+    if (!groupsContainer) return;
+    groupsContainer.innerHTML = '';
+
+    const query = filterText.toLowerCase().trim();
+    const filtered = loadedM365Groups.filter(g => {
+      const nameMatch = g.name ? g.name.toLowerCase().includes(query) : false;
+      const mailMatch = g.mail ? g.mail.toLowerCase().includes(query) : false;
+      return nameMatch || mailMatch;
+    });
+
+    if (filtered.length === 0) {
+      groupsContainer.innerHTML = '<span style="opacity: 0.5; padding: 4px;">Nenhum grupo correspondente encontrado.</span>';
+      return;
+    }
+
+    filtered.forEach(g => {
+      const isChecked = selectedM365GroupsMap.has(g.id);
+      const div = document.createElement('div');
+      div.style.display = 'flex';
+      div.style.alignItems = 'flex-start';
+      div.style.gap = '6px';
+      div.style.padding = '3px 4px';
+      div.style.borderBottom = '1px solid #f3f4f6';
+      div.innerHTML = `
+        <input type="checkbox" class="m365-group-cb" value="${escapeHTML(g.id)}" ${isChecked ? 'checked' : ''} id="m365act_cb_${escapeHTML(g.id)}" style="margin-top: 1px;">
+        <label for="m365act_cb_${escapeHTML(g.id)}" style="cursor:pointer; font-size:10px; line-height: 1.2; word-break: break-word;" title="${escapeHTML(g.name)} (${escapeHTML(g.mail)})">${escapeHTML(g.name)}<span style="opacity:0.6; font-size:8px; margin-left: 6px; font-weight: normal; white-space: nowrap;">[${escapeHTML(g.type)}]</span></label>
+      `;
+      
+      const cb = div.querySelector('input');
+      cb.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          selectedM365GroupsMap.set(g.id, g);
+        } else {
+          selectedM365GroupsMap.delete(g.id);
+        }
+      });
+
+      groupsContainer.appendChild(div);
+    });
+  }
+
+  if (groupsSearch) {
+    groupsSearch.addEventListener('input', (e) => {
+      renderGroups(e.target.value);
+    });
+  }
+
+  // UI Offline
+  function setOfflineUI() {
+    m365Connected = false;
+    btnApply.disabled = true;
+    termStatus.textContent = 'Offline';
+    licenseSelect.innerHTML = '<option value="">-- Nenhuma licença selecionada --</option>';
+    groupsContainer.innerHTML = '<span style="opacity: 0.5; padding: 4px; color: #dc2626;">M365 Offline. Conecte ao M365 no painel lateral antes de prosseguir.</span>';
+  }
+
+  async function refreshToken() {
+    try {
+      const res = await fetch(`${SERVER_BASE}/api/ping`);
+      if (res.ok) {
+        const data = await res.json();
+        window._serverToken = data.token;
+        return true;
+      }
+    } catch (err) {
+      console.error('Erro ao atualizar token:', err);
+    }
+    return false;
+  }
+
+  async function fetchWithToken(url, options = {}) {
+    if (!options.headers) {
+      options.headers = {};
+    }
+    options.headers['X-Server-Token'] = window._serverToken;
+
+    let res = await fetch(url, options);
+    if (res.status === 401) {
+      const refreshed = await refreshToken();
+      if (refreshed) {
+        options.headers['X-Server-Token'] = window._serverToken;
+        res = await fetch(url, options);
+      }
+    }
+    return res;
+  }
+
+  // Carrega Licenças e Grupos do Servidor
+  async function loadData() {
+    // 1. Licenças
+    try {
+      const res = await fetchWithToken(`${SERVER_BASE}/api/m365/licencas`);
+      if (res.ok) {
+        const data = await res.json();
+        const currentVal = licenseSelect.value;
+        licenseSelect.innerHTML = '<option value="">-- Nenhuma licença selecionada --</option>';
+        (data.licenses || []).forEach(lic => {
+          const opt = document.createElement('option');
+          opt.value = lic.skuId;
+          const friendlyName = getFriendlySkuName(lic.skuPartNumber);
+          opt.textContent = `${friendlyName} (${lic.availableUnits} de ${lic.totalUnits} disponíveis)`;
+          licenseSelect.appendChild(opt);
+        });
+        if (currentVal) {
+          licenseSelect.value = currentVal;
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao obter licenças M365 (Manual):', err);
+    }
+
+    // 2. Grupos
+    try {
+      const res = await fetchWithToken(`${SERVER_BASE}/api/m365/grupos`);
+      if (res.ok) {
+        const data = await res.json();
+        loadedM365Groups = data.groups || [];
+        
+        // Mantém seleção dos grupos válidos
+        const validGroupIds = new Set(loadedM365Groups.map(g => g.id));
+        for (const [id] of selectedM365GroupsMap) {
+          if (!validGroupIds.has(id)) {
+            selectedM365GroupsMap.delete(id);
+          }
+        }
+        renderGroups(groupsSearch ? groupsSearch.value : '');
+      }
+    } catch (err) {
+      console.error('Erro ao obter grupos M365 (Manual):', err);
+    }
+  }
+
+  // Função global invocada quando a aba "Ativar M365" é exibida
+  window._m365ActRefreshData = async function () {
+    if (!window._serverToken) {
+      // Tenta recuperar token caso o servidor tenha reiniciado
+      const refreshed = await refreshToken();
+      if (!refreshed) {
+        setOfflineUI();
+        return;
+      }
+    }
+    
+    termStatus.textContent = 'Verificando conexão...';
+    try {
+      const statusRes = await fetchWithToken(`${SERVER_BASE}/api/m365/status`);
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        const connected = statusData.graphConnected && statusData.exchangeConnected;
+        m365Connected = connected;
+        
+        if (connected) {
+          termStatus.textContent = 'Pronto';
+          btnApply.disabled = false;
+          loadData();
+        } else {
+          setOfflineUI();
+        }
+      } else {
+        setOfflineUI();
+      }
+    } catch (err) {
+      console.error(err);
+      setOfflineUI();
+    }
+  };
+
+  // Clique no botão de Aplicar
+  btnApply.addEventListener('click', async () => {
+    const email = emailEl.value.trim();
+    if (!email) {
+      showToast('Erro: Informe o User Principal Name (E-mail M365).', '#ef4444');
+      return;
+    }
+
+    btnApply.disabled = true;
+    termStatus.textContent = 'Executando...';
+    termOut.innerHTML = '';
+    addTermLine('⚡ Iniciando ativação/configuração do M365 para ' + email + '...', 'info');
+
+    const selectedLicense = licenseSelect.value;
+    const selectedGroups = [];
+    selectedM365GroupsMap.forEach(g => {
+      selectedGroups.push({
+        id: g.id,
+        source: g.source,
+        name: g.name
+      });
+    });
+
+    const m365Payload = {
+      userPrincipalName: email,
+      licenses: selectedLicense ? [selectedLicense] : [],
+      groups: selectedGroups
+    };
+
+    try {
+      const res = await fetchWithToken(`${SERVER_BASE}/api/m365/aplicar`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(m365Payload)
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        for (const line of (data.lines || [])) {
+          addTermLine(line);
+          await new Promise(r => setTimeout(r, 20));
+        }
+        if (data.success) {
+          showToast('M365 / Exchange aplicado com sucesso! ✓');
+          termStatus.textContent = 'Sucesso';
+        } else {
+          showToast('Algumas operações na nuvem falharam.', '#ef4444');
+          termStatus.textContent = 'Falha';
+        }
+      } else {
+        addTermLine('❌ Falha ao comunicar com o endpoint de M365 do servidor.', 'error');
+        termStatus.textContent = 'Erro';
+      }
+    } catch (err) {
+      addTermLine(`❌ Erro no M365: ${err.message}`, 'error');
+      termStatus.textContent = 'Erro';
+    } finally {
+      btnApply.disabled = false;
+    }
+  });
+
+  // Clique em Limpar Log
+  if (termClearBtn) {
+    termClearBtn.addEventListener('click', () => {
+      termOut.innerHTML = 'Aguardando início do processo... Conecte ao M365 no painel lateral antes de iniciar.';
+      termStatus.textContent = 'Pronto';
+    });
+  }
+})();
+
