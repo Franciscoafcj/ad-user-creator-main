@@ -3,6 +3,21 @@
 
 
 
+// Verify the running backend, not just the files currently on disk.
+window.ensureM365QueueReady = async function () {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(`${window._SERVER_BASE || ''}/api/ping`, { cache: 'no-store', signal: controller.signal });
+    if (!response.ok) throw new Error('Não foi possível verificar o servidor.');
+    const data = await response.json();
+    if (!(data.m365QueueVersion >= 2)) {
+      throw new Error('O servidor aberto ainda não suporta esta fila. Feche o PowerShell do servidor, abra novamente pelo Start.bat e reconecte ao M365.');
+    }
+    window._serverToken = data.token;
+  } finally { clearTimeout(timeout); }
+};
+
 function escapeHTML(str) {
   if (!str && str !== 0) return '';
   return String(str).replace(/&/g, '&amp;')
@@ -220,6 +235,7 @@ function generateScript(u) {
     `try {`,
     `    $userParams = @{`,
     `        Name                  = $FullName`,
+    `        DisplayName           = $FullName`,
     `        GivenName             = $FirstName`,
     `        Surname               = $LastName`,
     `        SamAccountName        = $SamAccount`,
@@ -363,6 +379,7 @@ function generateBulkScript(users, domain, templateUser) {
     ``,
     `        New-ADUser \``,
     `            -Name              $u.FullName \``,
+    `            -DisplayName       $u.FullName \``,
     `            -GivenName         $u.FirstName \``,
     `            -Surname           $u.LastName \``,
     `            -SamAccountName    $u.Sam \``,
@@ -2570,6 +2587,10 @@ initUserSearch({
       if (!res.ok) throw new Error();
       const data = await res.json();
       window._serverToken = data.token;
+      if (!(data.m365QueueVersion >= 2)) {
+        const queueStatus = document.getElementById('m365QueueStatus');
+        if (queueStatus) queueStatus.textContent = 'Servidor desatualizado em execução. Reinicie o PowerShell pelo Start.bat e reconecte ao M365 para habilitar os agendamentos.';
+      }
       serverAvailable     = true;
       setServerIndicator(true, data.user, data.isAdmin);
       
@@ -2764,6 +2785,19 @@ initUserSearch({
       const userData = executeBtnEl._userData;
       if (!userData) { showToast('Gere o script primeiro.', '#f59e0b'); return; }
 
+      const selectedLicense = m365LicenseSelect ? m365LicenseSelect.value : '';
+      const selectedGroups = Array.from(selectedM365GroupsMap.values(), g => ({
+        id: g.id, source: g.source, name: g.name
+      }));
+      if (selectedLicense || selectedGroups.length) {
+        try { await window.ensureM365QueueReady(); }
+        catch (error) {
+          showToast(error.message, '#ef4444');
+          const queueStatus = document.getElementById('m365QueueStatus');
+          if (queueStatus) queueStatus.textContent = error.message;
+          return;
+        }
+      }
       // Monta payload JSON para o endpoint
       const payload = {
         nome         : userData.firstName,
@@ -2777,6 +2811,7 @@ initUserSearch({
         trocarSenha  : userData.mustChange,
         habilitado   : userData.enabled,
         departamento : '',
+        m365: { licenses: selectedLicense ? [selectedLicense] : [], groups: selectedGroups },
         usuarioModelo: userData.templateUser,
       };
 
@@ -2796,50 +2831,16 @@ initUserSearch({
           successInfoPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
-        // Se houver licenças ou grupos do M365 selecionados, aplicar na nuvem
-        const selectedLicense = m365LicenseSelect ? m365LicenseSelect.value : '';
-        const selectedGroups = [];
-        selectedM365GroupsMap.forEach(g => {
-          selectedGroups.push({
-            id: g.id,
-            source: g.source,
-            name: g.name
-          });
-        });
-
-        if (m365Connected && (selectedLicense || selectedGroups.length > 0)) {
-          const addLine = (t, h) => { appendTermLineInto(terminalOut, t, h); };
-          addLine('\n⚡ Aplicando configurações na Nuvem (Microsoft 365 / Exchange Online)...', 'info');
-          
-          const m365Payload = {
-            userPrincipalName: payload.email,
-            licenses: selectedLicense ? [selectedLicense] : [],
-            groups: selectedGroups
-          };
-
-          try {
-            const m365Res = await fetch(`${SERVER_BASE}/api/m365/aplicar`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-Server-Token': window._serverToken },
-              body: JSON.stringify(m365Payload)
-            });
-            if (m365Res.ok) {
-              const m365Data = await m365Res.json();
-              for (const line of (m365Data.lines || [])) {
-                addLine(line);
-                await new Promise(r => setTimeout(r, 20));
-              }
-              if (m365Data.success) {
-                showToast('M365 / Exchange aplicado com sucesso! ✓');
-              } else {
-                showToast('Algumas operações na nuvem falharam.', '#ef4444');
-              }
-            } else {
-              addLine('❌ Falha ao comunicar com o endpoint de M365 do servidor.', 'error');
-            }
-          } catch (err) {
-            addLine(`❌ Erro no M365: ${err.message}`, 'error');
-          }
+        if (result.m365Job) {
+          const when = new Date(result.m365Job.dueAt).toLocaleString('pt-BR');
+          showToast('M365 agendado para ' + when);
+          appendTermLineInto(terminalOut, '[M365] Agendado para ' + when + '. Acompanhe na aba Ativar M365.');
+          window.refreshM365Queue?.();
+        } else if (result.m365ScheduleError) {
+          showToast('Conta criada, mas o agendamento M365 falhou. Consulte o terminal.', '#ef4444');
+        } else if (selectedLicense || selectedGroups.length) {
+          appendTermLineInto(terminalOut, '[ERRO] Conta criada, mas o servidor não confirmou o agendamento. Não recrie a conta. Use Agendar para conta já criada no AD na aba Ativar M365.', 'error');
+          showToast('Conta criada sem confirmação de agendamento M365. Consulte o terminal.', '#ef4444');
         }
       }
     });
@@ -4373,6 +4374,8 @@ function generateBulkDisableScript(users, reason, moveOu, targetOu, expirePasswo
       });
 
       renderList();
+
+      updateCounters();
 
       if (added > 0) {
         showToast(`${added} usuário(s) adicionado(s) à fila. ✓`);
@@ -5985,17 +5988,23 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
   };
 
   // Clique no botão de Aplicar
-  btnApply.addEventListener('click', async () => {
+  async function submitM365(schedule = false) {
     const email = emailEl.value.trim();
     if (!email) {
       showToast('Erro: Informe o User Principal Name (E-mail M365).', '#ef4444');
       return;
     }
 
+    if (schedule) {
+      try { await window.ensureM365QueueReady(); }
+      catch (error) { showToast(error.message, '#ef4444'); return; }
+    }
     btnApply.disabled = true;
+    const scheduleButton = document.getElementById('btnM365ActSchedule');
+    if (scheduleButton) scheduleButton.disabled = true;
     termStatus.textContent = 'Executando...';
     termOut.innerHTML = '';
-    addTermLine('⚡ Iniciando ativação/configuração do M365 para ' + email + '...', 'info');
+    addTermLine((schedule ? 'Agendando M365 para ' : 'Iniciando ativação M365 para ') + email + '...', 'info');
 
     const selectedLicense = licenseSelect.value;
     const selectedGroups = [];
@@ -6014,7 +6023,8 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
     };
 
     try {
-      const res = await fetchWithToken(`${SERVER_BASE}/api/m365/aplicar`, {
+      const endpoint = schedule ? '/api/m365/agendar-existente' : '/api/m365/aplicar';
+      const res = await fetchWithToken(`${SERVER_BASE}${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -6029,14 +6039,16 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
           await new Promise(r => setTimeout(r, 20));
         }
         if (data.success) {
-          showToast('M365 / Exchange aplicado com sucesso! ✓');
-          termStatus.textContent = 'Sucesso';
+          showToast(schedule ? 'Agendamento M365 salvo. Consulte a fila.' : 'M365 / Exchange aplicado com sucesso! ✓');
+          termStatus.textContent = schedule ? 'Agendado' : 'Sucesso';
+          if (schedule) window.refreshM365Queue?.();
         } else {
           showToast('Algumas operações na nuvem falharam.', '#ef4444');
           termStatus.textContent = 'Falha';
         }
       } else {
-        addTermLine('❌ Falha ao comunicar com o endpoint de M365 do servidor.', 'error');
+        const error = await res.json().catch(() => ({}));
+        addTermLine(error.error || 'Falha ao comunicar com o endpoint de M365 do servidor.', 'error');
         termStatus.textContent = 'Erro';
       }
     } catch (err) {
@@ -6044,8 +6056,11 @@ function initDisableOuPicker({ searchId, clearId, dropId, chipId, chipNameId, ch
       termStatus.textContent = 'Erro';
     } finally {
       btnApply.disabled = false;
+      if (scheduleButton) scheduleButton.disabled = false;
     }
-  });
+  }
+  btnApply.addEventListener('click', () => submitM365(false));
+  document.getElementById('btnM365ActSchedule')?.addEventListener('click', () => submitM365(true));
 
   // Clique em Limpar Log
   if (termClearBtn) {

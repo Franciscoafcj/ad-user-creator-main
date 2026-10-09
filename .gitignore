@@ -4,6 +4,7 @@ ad-data.js
 # Arquivos de log/temp
 *.log
 *.tmp
+data/m365-queue/
 
 # Planejamento e documentação local
 walkthrough.md

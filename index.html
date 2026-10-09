@@ -303,7 +303,8 @@
 
           
           <div class="m365-section border-inset" id="m365FormSection" style="margin-top: 15px; padding: 10px; background: var(--win-bg); display: none; margin-bottom: 15px;">
-            <div style="font-weight: bold; font-size: 11px; margin-bottom: 8px; text-transform: uppercase; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; color: var(--win-fg);">Licenças & Grupos M365</div>
+            <div style="font-weight: bold; font-size: 11px; margin-bottom: 8px; text-transform: uppercase; border-bottom: 1px solid var(--win-gray); padding-bottom: 2px; color: var(--win-fg);">Licenças & Grupos M365 — após 30 minutos</div>
+            <p style="font-size:11px; margin-bottom:10px">Ao executar a criação pelo sistema, as seleções serão agendadas para 30 minutos após criar a conta no AD. Mantenha o servidor aberto e conectado ao M365. O navegador pode ser fechado. Scripts exportados não incluem esse agendamento.</p>
             
             
             <div class="form-group" style="margin-bottom: 10px;">
@@ -1403,6 +1404,13 @@
   
   <div class="locked-panel" id="panelM365" style="display:none">
     <div class="container">
+      <section class="card" style="margin-bottom:16px; padding:12px">
+        <h2>Agendamentos M365</h2>
+        <p>Primeira tentativa após 30 minutos. Etapas pendentes são repetidas a cada 5 minutos, até 36 tentativas. Reconecte ao M365 após reiniciar o servidor.</p>
+        <button type="button" class="btn-sm" id="refreshM365Queue">Atualizar fila</button>
+        <div id="m365QueueStatus" role="status" aria-live="polite">Carregando fila. Se esta mensagem persistir, reinicie o servidor PowerShell e atualize a página.</div>
+        <div id="m365QueueList" style="overflow:auto; max-height:350px; margin-top:8px"></div>
+      </section>
       <div class="card-grid">
         
         <section class="card form-card" style="height: 620px; display: flex; flex-direction: column;">
@@ -1479,6 +1487,8 @@
               </svg>
               Aplicar Licenças e Grupos na Nuvem
             </button>
+            <button type="button" class="btn-sm" id="btnM365ActSchedule" style="width:100%; margin-top:8px">Agendar para conta já criada no AD</button>
+            <p style="font-size:11px">O agendamento considera 30 minutos desde a criação no AD. Se esse prazo já passou, a execução entra na próxima verificação da fila.</p>
           </div>
         </section>
 
@@ -1870,7 +1880,8 @@
   <script src="config.js"></script>
   
   <script src="ad-data.js" onerror="window.AD_DATA=null"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=20261001-queue2"></script>
+  <script src="m365-queue.js?v=20261001-queue2" onerror="document.getElementById('m365QueueStatus').textContent='A fila não foi carregada. Reinicie o servidor PowerShell pelo Start.bat e atualize a página.'"></script>
 </body>
 
 </html>

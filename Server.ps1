@@ -161,6 +161,8 @@ function Invoke-CriarUsuario {
 
     $linhas  = [System.Collections.Generic.List[string]]::new()
     $sucesso = $false
+    $m365Job = $null
+    $m365ScheduleError = $null
 
     try {
         if (-not $ADModuleLoaded) { throw 'Módulo ActiveDirectory não disponível.' }
@@ -197,6 +199,7 @@ function Invoke-CriarUsuario {
         $senha  = ConvertTo-SecureString ([string]$Data.senha) -AsPlainText -Force
         $params = @{
             Name                  = $nomeCompleto
+            DisplayName           = $nomeCompleto
             GivenName             = [string]$Data.nome
             Surname               = $(if ($Data.sobrenome) { [string]$Data.sobrenome } else { '' })
             SamAccountName        = [string]$Data.sam
@@ -212,7 +215,17 @@ function Invoke-CriarUsuario {
         if ($Data.departamento) { $params.Department = [string]$Data.departamento }
         if ($Data.cargo)        { $params.Title      = [string]$Data.cargo }
 
-        New-ADUser @params
+        $createdUser = New-ADUser @params -PassThru
+        $createdAt = [datetime]::UtcNow
+        if ($Data.m365) {
+            try {
+                $selection = ConvertTo-SafeHashtable $Data.m365
+                $m365Job = New-M365QueueJob -Upn ([string]$Data.email) -ObjectGuid ([string]$createdUser.ObjectGuid) -Selection $selection -CreatedAt $createdAt
+            } catch {
+                $m365ScheduleError = $_.Exception.Message
+                $linhas.Add("[ERRO] Conta criada, mas o agendamento M365 falhou: $m365ScheduleError. Use a ativacao manual; nao recrie a conta.")
+            }
+        }
 
         $linhas.Add("[OK] Usuário '$nomeCompleto' criado com sucesso!")
         $linhas.Add("   Login  : $($Data.sam)")
@@ -252,7 +265,8 @@ function Invoke-CriarUsuario {
         $linhas.Add("[ERRO] Erro: $($_.Exception.Message)")
     }
 
-    return @{ success = $sucesso; lines = @($linhas) }
+    if ($m365Job) { $linhas.Add("[M365] Licencas e grupos agendados para $($m365Job.dueAt) (UTC). Acompanhe na aba Ativar M365.") }
+    return @{ success = $sucesso; lines = @($linhas); m365Job = $m365Job; m365ScheduleError = $m365ScheduleError }
 }
 
 function Invoke-DesabilitarUsuario {
@@ -796,7 +810,7 @@ function Invoke-AplicarM365 {
                         $linhas.Add("      [OK] Membro adicionado via Graph!")
                     } catch {
                         $msg = $_.Exception.Message
-                        if ($msg -like "*already exists*" -or $msg -like "*Request_BadRequest*") {
+                        if ($msg -like "*already exist*" -or $msg -like "*added object references already exist*") {
                             $linhas.Add("      [OK] Usuário já é membro deste grupo.")
                         } else {
                             $linhas.Add("      [ERRO] Falha ao adicionar no Graph: $msg")
@@ -853,6 +867,8 @@ function Invoke-DesbloquearUsuario {
 
     return @{ success = $sucesso; lines = @($linhas) }
 }
+
+. (Join-Path $PSScriptRoot 'M365Queue.ps1')
 
 $Token    = [System.Guid]::NewGuid().ToString('N')
 $Listener = [System.Net.HttpListener]::new()
@@ -968,7 +984,7 @@ function Send-StaticFile {
         if ($ao) { $r.Headers.Add('Access-Control-Allow-Origin', $ao) }
         $r.Headers.Add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         $r.Headers.Add('Access-Control-Allow-Headers', 'Content-Type, X-Server-Token')
-        $r.Headers.Add('Cache-Control', 'public, max-age=300')  # 5 minutos
+        $r.Headers.Add('Cache-Control', 'no-store')
         
         $r.OutputStream.Write($bytes, 0, $bytes.Length)
     } catch {
@@ -979,10 +995,20 @@ function Send-StaticFile {
 }
 
 try {
+    $pendingContext = $null
     while ($Listener.IsListening) {
 
         $ctx = $null
-        try { $ctx = $Listener.GetContext() } catch { break }
+        try {
+            if (-not $pendingContext) { $pendingContext = $Listener.GetContextAsync() }
+            if (-not $pendingContext.Wait(1000)) {
+                Invoke-M365QueueTick
+                continue
+            }
+            $ctx = $pendingContext.GetAwaiter().GetResult()
+            $pendingContext = $null
+            Invoke-M365QueueTick
+        } catch { throw }
 
         $req    = $ctx.Request
         $path   = $req.Url.AbsolutePath.ToLower().TrimEnd('/')
@@ -999,6 +1025,10 @@ try {
             if ($path -eq '/app.js') {
                 $filePath = Join-Path $PSScriptRoot 'app.js'
                 Send-StaticFile $ctx $filePath 'application/javascript; charset=utf-8'
+                continue
+            }
+            if ($path -eq '/m365-queue.js') {
+                Send-StaticFile $ctx (Join-Path $PSScriptRoot 'm365-queue.js') 'application/javascript; charset=utf-8'
                 continue
             }
             if ($path -eq '/ad-data.js') {
@@ -1055,6 +1085,7 @@ try {
                 isAdmin = $isAdmin
                 port    = $Cfg.serverPort
                 adReady = $ADModuleLoaded
+                m365QueueVersion = 2
             }
             continue
         }
@@ -1390,6 +1421,40 @@ try {
         if ($method -eq 'GET' -and $path -eq '/api/m365/status') {
             $result = Get-M365Status
             Send-Json $ctx 200 $result
+            continue
+        }
+
+        if ($method -eq 'GET' -and $path -eq '/api/m365/fila') {
+            Send-Json $ctx 200 @{ jobs = @(Get-M365QueueJobs | Sort-Object createdAt -Descending) }
+            continue
+        }
+
+        if ($method -eq 'POST' -and $path -eq '/api/m365/agendar-existente') {
+            try {
+                $job = New-M365QueueJobForExistingUser (Read-JsonBody $ctx)
+                Send-Json $ctx 200 @{ success = $true; m365Job = $job; lines = @("[M365] Agendamento salvo para $($job.dueAt) (UTC).") }
+            } catch {
+                Send-Json $ctx 400 @{ success = $false; error = $_.Exception.Message }
+            }
+            continue
+        }
+
+        if ($method -eq 'POST' -and $path -eq '/api/m365/fila/acao') {
+            $body = Read-JsonBody $ctx
+            $job = Get-M365QueueJobs | Where-Object { $_.id -eq $body.id } | Select-Object -First 1
+            if (-not $job) { Send-Json $ctx 404 @{ error = 'Agendamento nao encontrado.' }; continue }
+            if ($body.action -eq 'cancel' -and $job.status -notin @('completed', 'cancelled')) {
+                $job.status = 'cancelled'
+            } elseif ($body.action -eq 'retry' -and $job.status -eq 'failed') {
+                $job.status = 'retry'
+                $job.attempts = 0
+                $job.nextAttemptAt = [datetime]::UtcNow.ToString('o')
+            } else { Send-Json $ctx 400 @{ error = 'Acao indisponivel para este agendamento.' }; continue }
+            try {
+                $job.updatedAt = [datetime]::UtcNow.ToString('o')
+                Save-M365QueueJob $job
+                Send-Json $ctx 200 @{ success = $true }
+            } catch { Send-Json $ctx 500 @{ error = 'Nao foi possivel salvar o agendamento.' } }
             continue
         }
 
